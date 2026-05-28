@@ -8,6 +8,7 @@
 
 #import "ControllerSupport.h"
 #import "Controller.h"
+#import "SteamControllerBridge.h"
 
 #import "OnScreenControls.h"
 
@@ -46,6 +47,9 @@ static const double MOUSE_SPEED_DIVISOR = 1.25;
     char _controllerNumbers;
     bool _multiController;
     bool _swapABXYButtons;
+
+    SteamControllerBridge *_steamControllerBridge;
+    int _steamControllerPlayerIndex;
 }
 
 // UPDATE_BUTTON_FLAG(controller, flag, pressed)
@@ -1219,7 +1223,29 @@ static const double MOUSE_SPEED_DIVISOR = 1.25;
             [self updateAutoOnScreenControlMode];
         }];
     }
-    
+
+    // The 2026 Steam Controller is read through SDL3 (it appears to GameController as a
+    // keyboard+mouse, not a gamepad). Reserve a player index for it and start the bridge.
+    // No-op when the app wasn't built with SDL3 (SteamControllerBridge.isAvailable == NO).
+    _steamControllerPlayerIndex = -1;
+    if (SteamControllerBridge.isAvailable) {
+        for (int i = 0; i < 4; i++) {
+            if (!(_controllerNumbers & (1 << i))) {
+                _controllerNumbers |= (1 << i);
+                _steamControllerPlayerIndex = i;
+                break;
+            }
+        }
+        if (_steamControllerPlayerIndex >= 0) {
+            _steamControllerBridge = [[SteamControllerBridge alloc] initWithPlayerIndex:(uint8_t)_steamControllerPlayerIndex];
+            // TODO: back this with a per-host "Use as Steam Controller" setting (add an
+            // `emulateSteamController` attribute to the settings Core Data model and read it
+            // here). Defaulting to enabled for now.
+            _steamControllerBridge.steamControllerEmulationEnabled = YES;
+            [_steamControllerBridge start];
+        }
+    }
+
     return self;
 }
 
@@ -1233,6 +1259,12 @@ static const double MOUSE_SPEED_DIVISOR = 1.25;
 
 -(void) cleanup
 {
+    if (_steamControllerBridge) {
+        [_steamControllerBridge stop];
+        _steamControllerBridge = nil;
+        _steamControllerPlayerIndex = -1;
+    }
+
     [[NSNotificationCenter defaultCenter] removeObserver:_controllerConnectObserver];
     [[NSNotificationCenter defaultCenter] removeObserver:_controllerDisconnectObserver];
     [[NSNotificationCenter defaultCenter] removeObserver:_mouseConnectObserver];
