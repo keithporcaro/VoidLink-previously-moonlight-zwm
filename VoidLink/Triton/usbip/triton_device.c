@@ -31,6 +31,11 @@
 static triton_write_sink_fn g_write_sink = 0;
 void triton_set_write_sink(triton_write_sink_fn cb) { g_write_sink = cb; }
 
+/* Live feature round-trips (0 = synthetic/echo only, the GREEN path; 1 = forward to BLE). */
+static int g_feature_live = 0;
+void triton_set_feature_live(int on) { g_feature_live = on; }
+#define TRITON_FEATURE_TIMEOUT_MS 50
+
 /* ---- Device Descriptor: the captured identity Steam matches on. ---- */
 const USB_DEVICE_DESCRIPTOR dev_dsc =
 {
@@ -205,6 +210,7 @@ void handle_unknown_control(int sockfd, StandardDeviceRequest *control_req, USBI
             g_last_feature_len = (len <= (int)sizeof g_last_feature_data) ? len : (int)sizeof g_last_feature_data;
             memcpy(g_last_feature_data, data, g_last_feature_len);
             if (g_write_sink) g_write_sink(TRITON_WRITE_FEATURE, data, len);  /* -> BLE report char */
+            if (g_feature_live) triton_feature_clear();  /* a GET_FEATURE now awaits the NEW reply */
             printf("  -> SET_REPORT wValue=0x%02x%02x cmd=0x%02x:",
                    control_req->wValue1, control_req->wValue0, g_last_feature_cmd);
             for (int i = 0; i < len; i++) printf(" %02x", data[i]);
@@ -225,11 +231,18 @@ void handle_unknown_control(int sockfd, StandardDeviceRequest *control_req, USBI
         unsigned char rid = control_req->wValue0;   /* report id (0x01) */
         int n = 0;
         if (g_last_feature_cmd == TRITON_CMD_GET_ATTRIBUTES) {
-            n = triton_build_attributes(rsp, rid);          /* [01][83][len][TLVs] */
-        } else if (g_last_feature_len > 0) {
-            n = (g_last_feature_len <= len) ? g_last_feature_len : len;
-            memcpy(rsp, g_last_feature_data, n);            /* mirror the written payload */
-            rsp[0] = rid;                                   /* ensure report-id byte */
+            n = triton_build_attributes(rsp, rid);          /* [01][83][len][TLVs] — synthetic (GREEN) */
+        } else {
+            if (g_feature_live) {
+                /* Live: the command was forwarded to BLE; await the controller's reply. */
+                n = triton_feature_wait(rsp, len, TRITON_FEATURE_TIMEOUT_MS);
+                if (n > 0) rsp[0] = rid;
+            }
+            if (n == 0 && g_last_feature_len > 0) {         /* fallback: mirror the written payload */
+                n = (g_last_feature_len <= len) ? g_last_feature_len : len;
+                memcpy(rsp, g_last_feature_data, n);
+                rsp[0] = rid;
+            }
         }
         printf("  -> GET_FEATURE wValue=0x%02x%02x wLen=%u: answering last cmd=0x%02x (%d structured bytes, sending %d)\n",
                control_req->wValue1, control_req->wValue0, control_req->wLength, g_last_feature_cmd, n, len);

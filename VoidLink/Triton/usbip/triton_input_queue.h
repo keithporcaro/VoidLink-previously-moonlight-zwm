@@ -46,6 +46,24 @@ int triton_input_pop(unsigned char *buf, int cap);
 /* Diagnostic: 1 once at least one real BLE state report has been translated/stored. */
 int triton_input_have_data(void);
 
+/* --- Feature-response round-trip cell (Steam GET_FEATURE -> controller -> Steam) ---
+ * Used only when a live controller (BLE) is wired. The Steam Controller protocol reads a
+ * feature by WRITING a command (SET_REPORT) then READING the reply (GET_FEATURE); the BLE
+ * bridge forwards the write, the controller replies, the bridge deposits it here, and the
+ * USB/IP server thread picks it up — bounded by a timeout so the host is never stalled
+ * (it falls back to the synthetic/echo responder that won the GREEN gate). Thread-safe. */
+
+/* Clear any pending feature reply. Call when a new command is sent to the controller, so a
+ * following GET_FEATURE waits for the NEW reply rather than returning a stale one. */
+void triton_feature_clear(void);
+
+/* BLE thread: deposit the controller's feature-report reply and wake a waiting server thread. */
+void triton_feature_provide(const unsigned char *data, int len);
+
+/* Server thread: wait up to timeout_ms for a provided reply; copy into buf (<=cap). Returns
+ * bytes copied, or 0 on timeout / none. One-shot: consumes the reply. */
+int triton_feature_wait(unsigned char *buf, int cap, int timeout_ms);
+
 #ifdef __cplusplus
 }
 #endif

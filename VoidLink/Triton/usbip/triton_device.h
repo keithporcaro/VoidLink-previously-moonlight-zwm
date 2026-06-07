@@ -20,6 +20,12 @@ typedef void (*triton_write_sink_fn)(int kind, const unsigned char *data, int le
  * the synthetic GET_ATTRIBUTES/echo responder alone kept Steam GREEN. */
 void triton_set_write_sink(triton_write_sink_fn cb);
 
+/* Enable live feature round-trips: when on, a GET_FEATURE other than GET_ATTRIBUTES (0x83)
+ * waits (bounded) for the controller's reply deposited via triton_feature_provide(), and
+ * falls back to the echo responder on timeout. OFF by default — GET_FEATURE is answered
+ * synthetically (the path that won the GREEN gate). The BLE bridge turns this on once live. */
+void triton_set_feature_live(int on);
+
 /* Start the USB/IP server (blocking — run on a dedicated thread). Returns when stopped. */
 void triton_usbip_start(void);
 

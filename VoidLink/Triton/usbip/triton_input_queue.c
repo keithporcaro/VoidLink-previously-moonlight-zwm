@@ -3,6 +3,7 @@
 #include "triton_input_queue.h"
 #include <string.h>
 #include <pthread.h>
+#include <time.h>
 
 static pthread_mutex_t g_lock = PTHREAD_MUTEX_INITIALIZER;
 static unsigned char   g_latest[TRITON_USB_WIRE];   /* latest USB-form 0x42 report */
@@ -77,4 +78,62 @@ int triton_input_have_data(void)
     int h = g_have;
     pthread_mutex_unlock(&g_lock);
     return h;
+}
+
+/* ---- Feature-response round-trip cell ---- */
+static pthread_mutex_t g_flock  = PTHREAD_MUTEX_INITIALIZER;
+static pthread_cond_t  g_fcond  = PTHREAD_COND_INITIALIZER;
+static unsigned char   g_freply[256];
+static int             g_freply_len   = 0;
+static int             g_freply_ready = 0;
+
+void triton_feature_clear(void)
+{
+    pthread_mutex_lock(&g_flock);
+    g_freply_ready = 0;
+    g_freply_len   = 0;
+    pthread_mutex_unlock(&g_flock);
+}
+
+void triton_feature_provide(const unsigned char *data, int len)
+{
+    if (!data || len < 0) {
+        return;
+    }
+    if (len > (int)sizeof g_freply) {
+        len = (int)sizeof g_freply;
+    }
+    pthread_mutex_lock(&g_flock);
+    memcpy(g_freply, data, (size_t)len);
+    g_freply_len   = len;
+    g_freply_ready = 1;
+    pthread_cond_signal(&g_fcond);
+    pthread_mutex_unlock(&g_flock);
+}
+
+int triton_feature_wait(unsigned char *buf, int cap, int timeout_ms)
+{
+    if (!buf || cap <= 0) {
+        return 0;
+    }
+    struct timespec ts;
+    clock_gettime(CLOCK_REALTIME, &ts);
+    ts.tv_sec  += timeout_ms / 1000;
+    ts.tv_nsec += (long)(timeout_ms % 1000) * 1000000L;
+    if (ts.tv_nsec >= 1000000000L) { ts.tv_sec += 1; ts.tv_nsec -= 1000000000L; }
+
+    pthread_mutex_lock(&g_flock);
+    int rc = 0;
+    while (!g_freply_ready && rc == 0) {
+        rc = pthread_cond_timedwait(&g_fcond, &g_flock, &ts);   /* ETIMEDOUT breaks the loop */
+    }
+    int n = 0;
+    if (g_freply_ready) {
+        n = (g_freply_len <= cap) ? g_freply_len : cap;
+        memcpy(buf, g_freply, (size_t)n);
+        g_freply_ready = 0;     /* one-shot */
+        g_freply_len   = 0;
+    }
+    pthread_mutex_unlock(&g_flock);
+    return n;
 }

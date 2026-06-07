@@ -3,7 +3,19 @@
 #include <assert.h>
 #include <stdio.h>
 #include <string.h>
+#include <pthread.h>
+#include <unistd.h>
 #include "triton_input_queue.h"
+
+/* Provider that deposits a 5-byte feature reply after 40 ms (for the cross-thread tests). */
+static void *provider_thread(void *arg)
+{
+    (void)arg;
+    usleep(40 * 1000);
+    unsigned char reply[5] = { 0x01, 0x83, 0x02, 0xAB, 0xCD };
+    triton_feature_provide(reply, sizeof reply);
+    return NULL;
+}
 
 int main(void)
 {
@@ -63,6 +75,40 @@ int main(void)
     /* 7. Too-small consumer buffer is rejected. */
     unsigned char tiny[16];
     assert(triton_input_pop(tiny, sizeof tiny) == 0);
+
+    /* ---- Feature-response round-trip cell ---- */
+    unsigned char fbuf[64];
+
+    /* 8. Wait with no provider times out -> 0. */
+    triton_feature_clear();
+    assert(triton_feature_wait(fbuf, sizeof fbuf, 20) == 0);
+
+    /* 9. Provide then wait returns the reply; it is one-shot (a second wait times out). */
+    unsigned char r1[4] = { 0x01, 0x83, 0x10, 0x20 };
+    triton_feature_provide(r1, sizeof r1);
+    int fn = triton_feature_wait(fbuf, sizeof fbuf, 50);
+    assert(fn == 4 && fbuf[1] == 0x83 && fbuf[3] == 0x20);
+    assert(triton_feature_wait(fbuf, sizeof fbuf, 20) == 0);
+
+    /* 10. clear() discards a pending reply. */
+    triton_feature_provide(r1, sizeof r1);
+    triton_feature_clear();
+    assert(triton_feature_wait(fbuf, sizeof fbuf, 20) == 0);
+
+    /* 11. Cross-thread: provider deposits at 40 ms; a 200 ms wait receives it. */
+    pthread_t th;
+    pthread_create(&th, NULL, provider_thread, NULL);
+    fn = triton_feature_wait(fbuf, sizeof fbuf, 200);
+    pthread_join(th, NULL);
+    assert(fn == 5 && fbuf[1] == 0x83 && fbuf[4] == 0xCD);
+
+    /* 12. Cross-thread timeout: provider at 40 ms, but the server only waits 15 ms -> 0. */
+    triton_feature_clear();
+    pthread_t th2;
+    pthread_create(&th2, NULL, provider_thread, NULL);
+    assert(triton_feature_wait(fbuf, sizeof fbuf, 15) == 0);
+    pthread_join(th2, NULL);          /* provider still fires at 40 ms */
+    triton_feature_clear();           /* discard that late reply */
 
     printf("PASS\n");
     return 0;
