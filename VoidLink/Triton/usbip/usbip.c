@@ -28,6 +28,14 @@
 
 #include"usbip.h"
 
+/* The lcgamboa core prints a block per URB — including every interrupt-IN poll — which on a
+ * live stream is millions of lines (e.g. 1.6M polls -> 21M lines). Silence usbip.c's logging
+ * unless TRITON_VERBOSE is defined. The device layer (triton_device.c) keeps its low-volume
+ * control-transfer trace, which only fires at init + occasional feature reads. */
+#ifndef TRITON_VERBOSE
+#define printf(...) ((void)0)
+#endif
+
 
 #ifdef _DEBUG
 void print_recv(char* buff,int size,const char* desc)
