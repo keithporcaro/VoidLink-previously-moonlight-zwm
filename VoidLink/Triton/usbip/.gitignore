@@ -1,0 +1,4 @@
+# Tier-1 (WSL) build artifacts — the iOS app builds these sources via Xcode.
+triton-server
+test_input_queue
+*.o
