@@ -18,7 +18,6 @@
 		18416EA42EBB3DCE00AE0124 /* UITouchUtil.swift in Sources */ = {isa = PBXBuildFile; fileRef = 18416EA32EBB3DCE00AE0124 /* UITouchUtil.swift */; };
 		1850C82A2E667E4000845308 /* MicHandler.swift in Sources */ = {isa = PBXBuildFile; fileRef = 1850C8292E667E4000845308 /* MicHandler.swift */; };
 		18729EDE2E8BD68800101194 /* UUIDHelper.swift in Sources */ = {isa = PBXBuildFile; fileRef = 18729EDD2E8BD68800101194 /* UUIDHelper.swift */; };
-		18780CC72F10D66000B90483 /* StoreKit.framework in Frameworks */ = {isa = PBXBuildFile; fileRef = 18780CC62F10D66000B90483 /* StoreKit.framework */; };
 		18780CCA2F10D6CC00B90483 /* IAPManager.swift in Sources */ = {isa = PBXBuildFile; fileRef = 18780CC92F10D6CC00B90483 /* IAPManager.swift */; };
 		187F4B282E04658A00EECC59 /* WidgetPanelStackView.m in Sources */ = {isa = PBXBuildFile; fileRef = 187F4B272E04658A00EECC59 /* WidgetPanelStackView.m */; };
 		1888C1922E24C33100108730 /* AboutViewController.swift in Sources */ = {isa = PBXBuildFile; fileRef = 1888C1912E24C33100108730 /* AboutViewController.swift */; };
@@ -42,6 +41,12 @@
 		2AC1EAFC2F922889004EDA80 /* UIStackExtension.swift in Sources */ = {isa = PBXBuildFile; fileRef = 2AC1EAFA2F922602004EDA80 /* UIStackExtension.swift */; };
 		3A4A3A112F0C000100000001 /* OSCProfilesTableViewController.swift in Sources */ = {isa = PBXBuildFile; fileRef = 3A4A3A102F0C000100000001 /* OSCProfilesTableViewController.swift */; };
 		3A4A3A132F0C000100000003 /* LayoutOnScreenControlsViewController.swift in Sources */ = {isa = PBXBuildFile; fileRef = 3A4A3A122F0C000100000002 /* LayoutOnScreenControlsViewController.swift */; };
+		591562742FD71CF30099BE6B /* TritonController.m in Sources */ = {isa = PBXBuildFile; fileRef = 591562732FD71CF30099BE6B /* TritonController.m */; };
+		591562782FD71DA80099BE6B /* triton_input_queue.c in Sources */ = {isa = PBXBuildFile; fileRef = 591562762FD71DA80099BE6B /* triton_input_queue.c */; };
+		591562792FD71DA80099BE6B /* triton_device.c in Sources */ = {isa = PBXBuildFile; fileRef = 591562752FD71DA80099BE6B /* triton_device.c */; };
+		5915627A2FD71DA80099BE6B /* usbip.c in Sources */ = {isa = PBXBuildFile; fileRef = 591562772FD71DA80099BE6B /* usbip.c */; };
+		5915627C2FD71DF50099BE6B /* TritonBLEBridge.m in Sources */ = {isa = PBXBuildFile; fileRef = 5915627B2FD71DF50099BE6B /* TritonBLEBridge.m */; };
+		5915627E2FD71E770099BE6B /* CoreBluetooth.framework in Frameworks */ = {isa = PBXBuildFile; fileRef = 5915627D2FD71E770099BE6B /* CoreBluetooth.framework */; };
 		840751B32BF49C050096B657 /* CustomTapGestureRecognizer.m in Sources */ = {isa = PBXBuildFile; fileRef = 840751B22BF49C050096B657 /* CustomTapGestureRecognizer.m */; };
 		84203F232C5F24C00032EEED /* OnScreenWidgetView.swift in Sources */ = {isa = PBXBuildFile; fileRef = 84203F222C5F24C00032EEED /* OnScreenWidgetView.swift */; };
 		84351B0E2C29ACCB00A77989 /* LayoutOnScreenControls.m in Sources */ = {isa = PBXBuildFile; fileRef = 84351B072C29ACCA00A77989 /* LayoutOnScreenControls.m */; };
@@ -187,7 +192,6 @@
 		18416EA32EBB3DCE00AE0124 /* UITouchUtil.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = UITouchUtil.swift; sourceTree = "<group>"; };
 		1850C8292E667E4000845308 /* MicHandler.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = MicHandler.swift; sourceTree = "<group>"; };
 		18729EDD2E8BD68800101194 /* UUIDHelper.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = UUIDHelper.swift; sourceTree = "<group>"; };
-		18780CC62F10D66000B90483 /* StoreKit.framework */ = {isa = PBXFileReference; lastKnownFileType = wrapper.framework; name = StoreKit.framework; path = System/Library/Frameworks/StoreKit.framework; sourceTree = SDKROOT; };
 		18780CC92F10D6CC00B90483 /* IAPManager.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = IAPManager.swift; sourceTree = "<group>"; };
 		187F4B232E04633100EECC59 /* WidgetPanelStackView.h */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.c.h; path = WidgetPanelStackView.h; sourceTree = "<group>"; };
 		187F4B272E04658A00EECC59 /* WidgetPanelStackView.m */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.c.objc; path = WidgetPanelStackView.m; sourceTree = "<group>"; };
@@ -210,6 +214,12 @@
 		2AC1EAFA2F922602004EDA80 /* UIStackExtension.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = UIStackExtension.swift; sourceTree = "<group>"; };
 		3A4A3A102F0C000100000001 /* OSCProfilesTableViewController.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = OSCProfilesTableViewController.swift; sourceTree = "<group>"; };
 		3A4A3A122F0C000100000002 /* LayoutOnScreenControlsViewController.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = LayoutOnScreenControlsViewController.swift; sourceTree = "<group>"; };
+		591562732FD71CF30099BE6B /* TritonController.m */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.c.objc; path = TritonController.m; sourceTree = "<group>"; };
+		591562752FD71DA80099BE6B /* triton_device.c */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.c.c; name = triton_device.c; path = usbip/triton_device.c; sourceTree = "<group>"; };
+		591562762FD71DA80099BE6B /* triton_input_queue.c */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.c.c; name = triton_input_queue.c; path = usbip/triton_input_queue.c; sourceTree = "<group>"; };
+		591562772FD71DA80099BE6B /* usbip.c */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.c.c; name = usbip.c; path = usbip/usbip.c; sourceTree = "<group>"; };
+		5915627B2FD71DF50099BE6B /* TritonBLEBridge.m */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.c.objc; name = TritonBLEBridge.m; path = ble/TritonBLEBridge.m; sourceTree = "<group>"; };
+		5915627D2FD71E770099BE6B /* CoreBluetooth.framework */ = {isa = PBXFileReference; lastKnownFileType = wrapper.framework; name = CoreBluetooth.framework; path = System/Library/Frameworks/CoreBluetooth.framework; sourceTree = SDKROOT; };
 		693B3A9A218638CD00982F7B /* Settings.bundle */ = {isa = PBXFileReference; lastKnownFileType = "wrapper.plug-in"; path = Settings.bundle; sourceTree = "<group>"; };
 		840751B12BF49B5A0096B657 /* CustomTapGestureRecognizer.h */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.c.h; path = CustomTapGestureRecognizer.h; sourceTree = "<group>"; };
 		840751B22BF49C050096B657 /* CustomTapGestureRecognizer.m */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.c.objc; path = CustomTapGestureRecognizer.m; sourceTree = "<group>"; };
@@ -456,6 +466,7 @@
 			isa = PBXFrameworksBuildPhase;
 			buildActionMask = 2147483647;
 			files = (
+				5915627E2FD71E770099BE6B /* CoreBluetooth.framework in Frameworks */,
 				18A0EE272EFB9B5A00BA853A /* SVGKitSwift in Frameworks */,
 				18A0EE252EFB9B5A00BA853A /* SVGKit in Frameworks */,
 				9890CF6B203B7EE1006C4B06 /* libxml2.tbd in Frameworks */,
@@ -471,7 +482,6 @@
 				F74BEF9C2C1A705600224667 /* OpenSSL in Frameworks */,
 				98882A072AF60F7200C5A11C /* libavformat.a in Frameworks */,
 				FB290CF619B2C406004C83CF /* UIKit.framework in Frameworks */,
-				18780CC72F10D66000B90483 /* StoreKit.framework in Frameworks */,
 				FB290CF219B2C406004C83CF /* Foundation.framework in Frameworks */,
 				FB4679011A57048000377732 /* CoreFoundation.framework in Frameworks */,
 				182760FA2E83E57D00EC1C5C /* DequeModule in Frameworks */,
@@ -483,6 +493,18 @@
 /* End PBXFrameworksBuildPhase section */
 
 /* Begin PBXGroup section */
+		5915626A2FD71C500099BE6B /* Triton */ = {
+			isa = PBXGroup;
+			children = (
+				591562752FD71DA80099BE6B /* triton_device.c */,
+				591562762FD71DA80099BE6B /* triton_input_queue.c */,
+				5915627B2FD71DF50099BE6B /* TritonBLEBridge.m */,
+				591562772FD71DA80099BE6B /* usbip.c */,
+				591562732FD71CF30099BE6B /* TritonController.m */,
+			);
+			path = Triton;
+			sourceTree = "<group>";
+		};
 		84351B052C29ACAF00A77989 /* CustomOSC */ = {
 			isa = PBXGroup;
 			children = (
@@ -637,7 +659,7 @@
 		FB290CF019B2C406004C83CF /* Frameworks */ = {
 			isa = PBXGroup;
 			children = (
-				18780CC62F10D66000B90483 /* StoreKit.framework */,
+				5915627D2FD71E770099BE6B /* CoreBluetooth.framework */,
 				98882A032AF60F5300C5A11C /* libavcodec.a */,
 				98882A052AF60F5300C5A11C /* libavformat.a */,
 				98882A0A2AF60F9000C5A11C /* libavcodec.a */,
@@ -665,6 +687,7 @@
 		FB290CF919B2C406004C83CF /* VoidLink */ = {
 			isa = PBXGroup;
 			children = (
+				5915626A2FD71C500099BE6B /* Triton */,
 				97E20DEB2E21654B000D5DCA /* Stats */,
 				97E20DE82E216532000D5DCA /* SceneDelegate.h */,
 				97E20DE92E216532000D5DCA /* SceneDelegate.m */,
@@ -1202,6 +1225,7 @@
 				97E20DD12E21647A000D5DCA /* MetalView.m in Sources */,
 				97E20DD22E21647A000D5DCA /* MetalVideoRenderer.m in Sources */,
 				3A4A3A112F0C000100000001 /* OSCProfilesTableViewController.swift in Sources */,
+				591562742FD71CF30099BE6B /* TritonController.m in Sources */,
 				98D585701C0ED0E800F6CC00 /* TemporarySettings.m in Sources */,
 				1829CE3F2E2154DF0074A99A /* SceneDelegate.m in Sources */,
 				18729EDE2E8BD68800101194 /* UUIDHelper.swift in Sources */,
@@ -1213,11 +1237,15 @@
 				FB4678ED1A50C40900377732 /* OnScreenControls.m in Sources */,
 				84E1CDFA2C4FE83400547904 /* LocalizationHelperExtension.swift in Sources */,
 				FB290D0019B2C406004C83CF /* main.m in Sources */,
+				591562782FD71DA80099BE6B /* triton_input_queue.c in Sources */,
+				591562792FD71DA80099BE6B /* triton_device.c in Sources */,
+				5915627A2FD71DA80099BE6B /* usbip.c in Sources */,
 				9896219723D15C7000211983 /* X1Kit.swift in Sources */,
 				FBD3494319FC9C04002D2A60 /* AppAssetManager.m in Sources */,
 				FB6549561A57907E001C8F39 /* DiscoveryWorker.m in Sources */,
 				84351B0E2C29ACCB00A77989 /* LayoutOnScreenControls.m in Sources */,
 				FB89462A19F646E200339C8A /* ControllerSupport.m in Sources */,
+				5915627C2FD71DF50099BE6B /* TritonBLEBridge.m in Sources */,
 				FB9AFD3D1A7E111600872C98 /* AppAssetResponse.m in Sources */,
 				1888C1922E24C33100108730 /* AboutViewController.swift in Sources */,
 				FBD349621A0089F6002D2A60 /* DataManager.m in Sources */,
@@ -1300,7 +1328,7 @@
 				CODE_SIGN_STYLE = Automatic;
 				CURRENT_PROJECT_VERSION = 1;
 				DEBUG_INFORMATION_FORMAT = dwarf;
-				DEVELOPMENT_TEAM = FRL23UV4N9;
+				DEVELOPMENT_TEAM = L338582ZYZ;
 				ENABLE_PREVIEWS = YES;
 				ENABLE_USER_SCRIPT_SANDBOXING = YES;
 				GCC_C_LANGUAGE_STANDARD = gnu17;
@@ -1349,7 +1377,7 @@
 				COPY_PHASE_STRIP = NO;
 				CURRENT_PROJECT_VERSION = 1;
 				DEBUG_INFORMATION_FORMAT = "dwarf-with-dsym";
-				DEVELOPMENT_TEAM = FRL23UV4N9;
+				DEVELOPMENT_TEAM = L338582ZYZ;
 				ENABLE_PREVIEWS = YES;
 				ENABLE_USER_SCRIPT_SANDBOXING = YES;
 				GCC_C_LANGUAGE_STANDARD = gnu17;
@@ -1499,7 +1527,7 @@
 				CODE_SIGN_IDENTITY = "Apple Development";
 				CODE_SIGN_STYLE = Automatic;
 				CURRENT_PROJECT_VERSION = x;
-				DEVELOPMENT_TEAM = FRL23UV4N9;
+				DEVELOPMENT_TEAM = L338582ZYZ;
 				GCC_PRECOMPILE_PREFIX_HEADER = YES;
 				GCC_PREFIX_HEADER = "VoidLink/Limelight-Prefix.pch";
 				HEADER_SEARCH_PATHS = (
@@ -1515,6 +1543,7 @@
 					"$(PROJECT_DIR)/Limelight/Localization",
 					"$(PROJECT_DIR)/third_party/imgui",
 					"$(PROJECT_DIR)/Limelight/Database",
+					"$(SRCROOT)/VoidLink/Triton/**",
 				);
 				INFOPLIST_FILE = "VoidLink/Limelight-Info.plist";
 				INFOPLIST_KEY_CFBundleDisplayName = VoidLink;
@@ -1543,7 +1572,7 @@
 					"$(PROJECT_DIR)/libs/FFmpeg/lib/iOS-Sim",
 				);
 				MARKETING_VERSION = 0.0.1;
-				PRODUCT_BUNDLE_IDENTIFIER = com.voidlink.tf.debug10.iOS;
+				PRODUCT_BUNDLE_IDENTIFIER = com.voidlinkkp.tf.debug10.iOS;
 				PRODUCT_NAME = "$(TARGET_NAME)";
 				PROVISIONING_PROFILE = "";
 				PROVISIONING_PROFILE_SPECIFIER = "";
@@ -1565,7 +1594,7 @@
 				CODE_SIGN_IDENTITY = "iPhone Developer";
 				"CODE_SIGN_IDENTITY[sdk=iphoneos*]" = "iPhone Developer";
 				CURRENT_PROJECT_VERSION = x;
-				DEVELOPMENT_TEAM = FRL23UV4N9;
+				DEVELOPMENT_TEAM = L338582ZYZ;
 				GCC_PRECOMPILE_PREFIX_HEADER = YES;
 				GCC_PREFIX_HEADER = "VoidLink/Limelight-Prefix.pch";
 				HEADER_SEARCH_PATHS = (
@@ -1581,6 +1610,7 @@
 					"$(PROJECT_DIR)/Limelight/Localization",
 					"$(PROJECT_DIR)/third_party/imgui",
 					"$(PROJECT_DIR)/Limelight/Database",
+					"$(SRCROOT)/VoidLink/Triton/**",
 				);
 				INFOPLIST_FILE = "VoidLink/Limelight-Info.plist";
 				INFOPLIST_KEY_CFBundleDisplayName = VoidLink;
@@ -1609,7 +1639,7 @@
 					"$(PROJECT_DIR)/libs/FFmpeg/lib/iOS-Sim",
 				);
 				MARKETING_VERSION = 0.0.1;
-				PRODUCT_BUNDLE_IDENTIFIER = com.voidlink.tf.iOS;
+				PRODUCT_BUNDLE_IDENTIFIER = com.voidlinkkp.tf.iOS;
 				PRODUCT_NAME = "$(TARGET_NAME)";
 				PROVISIONING_PROFILE = "";
 				SKIP_INSTALL = NO;

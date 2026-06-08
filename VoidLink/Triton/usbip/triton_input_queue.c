@@ -3,6 +3,13 @@
 #include "triton_input_queue.h"
 #include <string.h>
 #include <pthread.h>
+#ifdef __APPLE__
+/* iOS 26 SDK explicit-modules layout: the _DarwinFoundation2 sub-modules holding
+ * timespec / clock_gettime aren't auto-exported, so <time.h> alone leaves them
+ * "not reachable". Force-include the specific sub-headers clang's fix-it suggests. */
+#include <sys/_types/_timespec.h>
+#include <_time.h>
+#endif
 #include <time.h>
 
 static pthread_mutex_t g_lock = PTHREAD_MUTEX_INITIALIZER;
