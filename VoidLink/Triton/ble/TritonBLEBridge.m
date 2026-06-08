@@ -152,6 +152,15 @@ static NSString * const kTritonReportUUID    = @"100F6C34-1735-4313-B402-3856713
     if ([u caseInsensitiveCompare:kTritonInputUUID] == NSOrderedSame ||
         [u caseInsensitiveCompare:kTritonTimestampUUID] == NSOrderedSame) {
         /* Raw state report ([0x45|0x47][payload]) straight into the BLE->USB seam. */
+        /* Diagnostic: log the first few + 1-in-200 raw reports (with the source char + length)
+         * so we can see the real wire format — esp. where the live IMU/gyro actually arrives. */
+        static int s_in = 0;
+        s_in++;
+        if (s_in <= 8 || (s_in % 200) == 0) {
+            NSMutableString *h = [NSMutableString string];
+            for (int i = 0; i < len && i < 24; i++) [h appendFormat:@"%02x ", bytes[i]];
+            NSLog(@"[Triton] BLE in #%d char=%@ len=%d: %@", s_in, [u substringToIndex:8], len, h);
+        }
         triton_input_push_ble(bytes, len);
         if (!self.ready) {
             self.ready = YES;

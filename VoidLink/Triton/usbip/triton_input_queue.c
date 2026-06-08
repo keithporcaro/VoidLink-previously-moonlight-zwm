@@ -42,6 +42,14 @@ int triton_input_push_ble(const unsigned char *report, int len)
         int n = len - 1;
         if (n > TRITON_NOQUAT_LEN) n = TRITON_NOQUAT_LEN;
         if (n > 0) memcpy(usb + 1, report + 1, (size_t)n);
+#ifndef TRITON_BLE_LIVE_IMU
+        /* The IMU bytes arrive FROZEN over BLE (the live gyro/accel appear to come on a
+         * separate path, TBD — see TritonBLEBridge raw-BLE log). A frozen non-zero gyro drives
+         * Steam's desktop gyro-mouse and flies the cursor, so zero the IMU until the real IMU
+         * framing is wired. Sticks/buttons/triggers/pads are unaffected. Define TRITON_BLE_LIVE_IMU
+         * once the IMU is sourced correctly. */
+        memset(usb + TRITON_IMU_OFFSET, 0, TRITON_IMU_LEN);
+#endif
     } else if (id == TRITON_USB_STATE_ID) {
         /* Already a USB 0x42 report (e.g. a recorded-USB replay or canned feed): copy
          * the whole thing, including the report id, up to the wire length. */

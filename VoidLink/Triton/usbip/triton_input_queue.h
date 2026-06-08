@@ -22,6 +22,8 @@
 #define TRITON_NOQUAT_LEN      45     /* sizeof packed TritonMTUNoQuat_t  */
 #define TRITON_USB_PAYLOAD     53     /* USB 0x42 declared payload bytes  */
 #define TRITON_USB_WIRE        54     /* 1 (report id) + 53               */
+#define TRITON_IMU_OFFSET      30     /* wire offset of TritonMTUNoQuat_t.imu (struct off 29 + 1) */
+#define TRITON_IMU_LEN         16     /* u32 timestamp + 6x s16 (accel xyz, gyro xyz)            */
 
 #ifdef __cplusplus
 extern "C" {

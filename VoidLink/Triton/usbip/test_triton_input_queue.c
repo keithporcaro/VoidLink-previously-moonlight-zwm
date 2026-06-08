@@ -41,10 +41,12 @@ int main(void)
     n = triton_input_pop(buf, sizeof buf);
     assert(n == TRITON_USB_WIRE);
     assert(buf[0] == 0x42);                  /* report id rewritten 0x45 -> 0x42 */
-    for (int i = 0; i < TRITON_NOQUAT_LEN; i++)
-        assert(buf[1 + i] == (unsigned char)(0x10 + i));   /* struct copied verbatim */
+    for (int i = 0; i < TRITON_IMU_OFFSET - 1; i++)        /* non-IMU fields (struct off 0..28) copied */
+        assert(buf[1 + i] == (unsigned char)(0x10 + i));
+    for (int i = 0; i < TRITON_IMU_LEN; i++)               /* IMU (wire 30..45) zeroed (frozen-IMU workaround) */
+        assert(buf[TRITON_IMU_OFFSET + i] == 0x00);
     for (int i = 0; i < (TRITON_USB_PAYLOAD - TRITON_NOQUAT_LEN); i++)
-        assert(buf[1 + TRITON_NOQUAT_LEN + i] == 0x00);    /* 8 trailing bytes zero */
+        assert(buf[1 + TRITON_NOQUAT_LEN + i] == 0x00);    /* 8 USB-only trailing bytes zero */
 
     /* 3. sLeftStickX is at TritonMTUNoQuat_t struct offset 9 -> USB wire offset 10.
      *    (== TRITON_LSX_OFFSET in triton_report.h.) Confirm the byte maps through. */
