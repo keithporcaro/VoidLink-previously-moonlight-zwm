@@ -112,6 +112,28 @@ int main(void)
     pthread_join(th2, NULL);          /* provider still fires at 40 ms */
     triton_feature_clear();           /* discard that late reply */
 
+    /* 13. REAL captured controller frame (2026-06-08, live BLE→USB on hardware): a frame whose
+     *     sticks/buttons are live but whose IMU tail arrived FROZEN (C3 7A C3 13 …). Confirm the
+     *     gamepad fields pass through verbatim and the frozen IMU zeroes out (no gyro-mouse). */
+    {
+        triton_input_queue_reset();
+        unsigned char real[] = {                 /* BLE 0x45 report = [0x45][45-byte payload] */
+            0x45,
+            0x00,0x00,0x10,0x31,0x00,0x00,0x00,0x00,      /* seq, buttons (pressed) */
+            0xFD,0x14,0x41,0xB9,0x84,0xFA,0x01,0x80,      /* triggers + sticks (live, off-center) */
+            0x00,0x00,0x00,0x00,0x00,0x00,0x00,0x00,0x00,0x00,0x00,0x00,  /* pads/left-pressure */
+            0xC3,0x7A,0xC3,0x13,0x02,0x10,0xE9,0x0F,0x5C,0x3C,0x00,0x00,0xFF,0xFF,0x00,0x00,0x00 /* FROZEN imu tail */
+        };
+        assert(triton_input_push_ble(real, sizeof real) == 1);
+        n = triton_input_pop(buf, sizeof buf);
+        assert(n == TRITON_USB_WIRE && buf[0] == 0x42);
+        /* gamepad fields survive verbatim */
+        assert(buf[3] == 0x10 && buf[4] == 0x31);                       /* buttons */
+        assert(buf[9] == 0xFD && buf[10] == 0x14 && buf[16] == 0x80);   /* sticks  */
+        /* the frozen IMU (was C3 7A C3 13 …) is zeroed -> no Steam gyro-mouse cursor-fly */
+        for (int i = 0; i < TRITON_IMU_LEN; i++) assert(buf[TRITON_IMU_OFFSET + i] == 0x00);
+    }
+
     printf("PASS\n");
     return 0;
 }
