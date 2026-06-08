@@ -26,6 +26,11 @@
 
 @property (readonly) bool shallDisableGyroHotSwitch;
 
+// When YES, the synthetic Steam Controller (USB/IP) owns input; fully suppress this object's
+// normal LiSendMultiControllerEvent send so the real controller is not double-delivered as a
+// generic Moonlight gamepad. Toggled by TritonController.
+@property (atomic, assign) BOOL usbipSteamControllerActive;
+
 -(id) initWithConfig:(StreamConfiguration*)streamConfig delegate:(id<ControllerSupportDelegate>)delegate;
 -(void) connectionEstablished;
 

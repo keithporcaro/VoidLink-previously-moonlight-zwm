@@ -16,6 +16,7 @@
 #import "StreamManager.h"
 #import "SceneDelegate.h"
 #import "ControllerSupport.h"
+#import "TritonController.h"   // synthetic Steam Controller (USB/IP) lifecycle
 #import "DataManager.h"
 #import "PaddedLabel.h"
 #import "ImGuiRenderer.h"
@@ -1545,7 +1546,14 @@
         // [self->_streamView showOnScreenControls];
         
         [self->_controllerSupport connectionEstablished];
-        
+
+        // Bring up the synthetic Steam Controller (USB/IP server + BLE bridge) off the UI thread.
+        // The host attaches with usbip-win2; once the real Triton feeds input, the normal
+        // gamepad path is suppressed (see ControllerSupport.usbipSteamControllerActive).
+        dispatch_async(dispatch_get_global_queue(QOS_CLASS_USER_INITIATED, 0), ^{
+            [[TritonController shared] startWithControllerSupport:self->_controllerSupport];
+        });
+
         if (self->_settings.statsOverlayEnabled) {
             self->_statsUpdateTimer = [NSTimer scheduledTimerWithTimeInterval:1.0f
                                                                        target:self
@@ -1558,7 +1566,11 @@
 
 - (void)connectionTerminated:(int)errorCode {
     Log(LOG_I, @"Connection terminated: %d", errorCode);
-    
+
+    // Tear down the synthetic Steam Controller (stops the USB/IP server + BLE, releases the
+    // gamepad-suppression flag). Safe to call from any thread / when inactive.
+    [[TritonController shared] stop];
+
     unsigned int portFlags = LiGetPortFlagsFromTerminationErrorCode(errorCode);
     unsigned int portTestResults = LiTestClientConnectivity(CONN_TEST_SERVER, 443, portFlags);
     

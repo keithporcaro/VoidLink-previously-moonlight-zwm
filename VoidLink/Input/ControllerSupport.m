@@ -632,9 +632,13 @@ static const double MOUSE_SPEED_DIVISOR = 1.25;
             //NSLog(@"gamepadMask: %@", [self binaryRepresentationOfInteger:buttonFlags]); // we got the pressed OSC buttons here.
             
             // Player 0 is always present for OSC
-            LiSendMultiControllerEvent(_multiController ? controller.playerIndex : 0, [self getActiveGamepadMask],
-                                       buttonFlags, leftTrigger, rightTrigger,
-                                       leftStickX, leftStickY, rightStickX, rightStickY);
+            // Suppress entirely while the synthetic Steam Controller (USB/IP) is active, so the
+            // real controller's input is not also sent to the host as a generic Moonlight gamepad.
+            if (!self.usbipSteamControllerActive) {
+                LiSendMultiControllerEvent(_multiController ? controller.playerIndex : 0, [self getActiveGamepadMask],
+                                           buttonFlags, leftTrigger, rightTrigger,
+                                           leftStickX, leftStickY, rightStickX, rightStickY);
+            }
         }
     }
     [_controllerStreamLock unlock];
