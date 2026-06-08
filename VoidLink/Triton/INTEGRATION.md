@@ -49,8 +49,9 @@ Triton/
 ## How it runs
 
 `connectionStarted` → `[[TritonController shared] startWithControllerSupport:]` →
-(a) `TritonBLEBridge` scans Valve service `100F6C32…`, subscribes input char `100F6C7A` (`0x45`),
-pushes raw reports into `triton_input_queue`; (b) the USB/IP server runs on a dedicated thread
+(a) `TritonBLEBridge` acquires the controller (via `retrieveConnectedPeripherals` — works while
+OS-paired; scan is a first-pairing fallback), opens the custom Valve service `100F6C32…`, subscribes
+input char `100F6C7A` (`0x45`), pushes raw reports into `triton_input_queue`; (b) the USB/IP server runs on a dedicated thread
 (`triton_usbip_start`) so the host attaches with usbip-win2; (c) on first input report,
 `usbipSteamControllerActive=YES` suppresses the normal gamepad path. Steam's writes flow back:
 server write-sink → C trampoline → `TritonBLEBridge handleHostWriteKind:` → GATT write to
