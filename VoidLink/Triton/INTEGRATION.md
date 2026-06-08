@@ -70,7 +70,10 @@ Host side (Vibepollo / manual): `usbip attach -r <ipad-ip> -b 1-1 --once` on str
   (off by default = the proven synthetic/echo responder that won the GREEN gate).
 - **Haptic/output channel:** outputs currently ride `100F6C34`; the real haptic characteristic may
   differ — verify against rumble.
-- **Direct-BLE mode:** the controller must be connected via the custom Valve service, NOT OS-paired
-  in iOS Settings as a system HID (that binds `0x1812` and forces lizard mode).
+- **OS-paired is FINE (corrected):** the controller can be paired normally in iOS Settings — Steam
+  Link relies on exactly that. `TritonBLEBridge` acquires it via `retrieveConnectedPeripheralsWithServices`
+  (the OS-connected set, like Valve's `hid.m`), then opens the CUSTOM service alongside iOS's standard
+  HID binding; lizard mode is cleared by the gamepad-enable write. (The earlier spec §4.2 "must NOT be
+  OS-paired" claim is wrong.) The `scanForPeripherals` path remains only as a first-time-pairing fallback.
 - `triton_device.c` still uses `printf` for its low-volume control-transfer trace; route to `NSLog`
   or gate if you want a fully silent release build.

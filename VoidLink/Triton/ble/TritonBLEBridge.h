@@ -12,8 +12,11 @@
  *
  * Build: iOS only (Mac + Xcode + physical iPad — the Simulator has no BLE radio). Add
  * CoreBluetooth.framework. Requires NSBluetoothAlwaysUsageDescription (already in the plist).
- * The controller must be in DIRECT BLE mode (not OS-paired as a system HID, which binds the
- * standard 0x1812 service and forces lizard mode).
+ * OS-paired is FINE: the controller is normally connected via iOS Settings (Steam Link relies on
+ * exactly this). We open our own handle to the CUSTOM Valve service, which coexists with iOS's
+ * standard-HID (0x1812) binding; "lizard mode" is just the controller's default reporting, cleared
+ * by the gamepad-enable write — it is not a barrier to accessing the custom service. So we acquire
+ * via retrieveConnectedPeripheralsWithServices (the OS-connected set), and only scan as a fallback.
  */
 #import <Foundation/Foundation.h>
 

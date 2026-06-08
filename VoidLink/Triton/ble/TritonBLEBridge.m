@@ -64,12 +64,32 @@ static NSString * const kTritonReportUUID    = @"100F6C34-1735-4313-B402-3856713
 
 - (void)centralManagerDidUpdateState:(CBCentralManager *)central {
     if (central.state == CBManagerStatePoweredOn) {
-        CBUUID *svc = [CBUUID UUIDWithString:kTritonServiceUUID];
-        [central scanForPeripheralsWithServices:@[svc] options:nil];
-        NSLog(@"[Triton] BLE scanning for Valve service %@", kTritonServiceUUID);
+        [self acquireController];
     } else {
         NSLog(@"[Triton] BLE central state=%ld (need poweredOn)", (long)central.state);
     }
+}
+
+/* Acquire the Triton. PRIMARY path mirrors Valve's own iOS client (SDL hid.m:356-369): the
+ * controller is normally already connected to the system (paired in iOS Settings), so it is NOT
+ * advertising — find it via retrieveConnectedPeripheralsWithServices using Device Information
+ * (0x180A, which every BLE device exposes) and filter by the "Steam" name prefix. Opening our own
+ * handle to the CUSTOM Valve service coexists with iOS's standard-HID (0x1812) binding, so being
+ * OS-paired is fine (this is exactly what Steam Link does). FALLBACK: scan for a controller that
+ * is advertising in first-time pairing mode. */
+- (void)acquireController {
+    NSArray<CBPeripheral *> *connected =
+        [self.central retrieveConnectedPeripheralsWithServices:@[[CBUUID UUIDWithString:@"180A"]]];
+    for (CBPeripheral *p in connected) {
+        if ([p.name hasPrefix:@"Steam"]) {
+            NSLog(@"[Triton] found OS-connected controller '%@'", p.name);
+            self.controller = p;                 /* retain before connecting */
+            [self.central connectPeripheral:p options:nil];
+            return;
+        }
+    }
+    NSLog(@"[Triton] no OS-connected Steam controller; scanning for an advertising one");
+    [self.central scanForPeripheralsWithServices:@[[CBUUID UUIDWithString:kTritonServiceUUID]] options:nil];
 }
 
 - (void)centralManager:(CBCentralManager *)central didDiscoverPeripheral:(CBPeripheral *)peripheral
@@ -88,10 +108,10 @@ static NSString * const kTritonReportUUID    = @"100F6C34-1735-4313-B402-3856713
 
 - (void)centralManager:(CBCentralManager *)central didDisconnectPeripheral:(CBPeripheral *)peripheral
                  error:(NSError *)error {
-    NSLog(@"[Triton] disconnected (%@); rescanning", error.localizedDescription);
+    NSLog(@"[Triton] disconnected (%@); re-acquiring", error.localizedDescription);
     self.ready = NO; self.inputChar = nil; self.reportChar = nil;
     if (self.central.state == CBManagerStatePoweredOn) {
-        [self.central scanForPeripheralsWithServices:@[[CBUUID UUIDWithString:kTritonServiceUUID]] options:nil];
+        [self acquireController];   /* prefer the OS-connected controller, then scan */
     }
 }
 
