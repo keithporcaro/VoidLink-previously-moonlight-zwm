@@ -48,6 +48,11 @@ static void triton_write_sink_trampoline(int kind, const unsigned char *data, in
              * Off by default keeps the proven synthetic/echo responder (GREEN). */
             NSLog(@"[Triton] live — suppressing Voidlink's normal gamepad path");
         };
+        self.bridge.onDisconnect = ^{
+            __strong typeof(wself) sself = wself;
+            sself.controllerSupport.usbipSteamControllerActive = NO;  /* controller gone -> restore normal path */
+            NSLog(@"[Triton] controller disconnected — normal gamepad path restored");
+        };
         [self.bridge start];
 
         /* 3) Run the USB/IP server (blocking) on a dedicated thread so the host can attach. */

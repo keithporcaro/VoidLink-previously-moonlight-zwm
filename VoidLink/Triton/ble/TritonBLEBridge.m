@@ -15,6 +15,15 @@
 /* Set to 1 to wrap command writes as [0xC0][payload] (segment header REPORT_SEGMENT_DATA|LAST). */
 #define TRITON_BLE_C0_WRAPPER 0
 
+/* Verbose per-frame / per-write / per-characteristic diagnostics. Off for normal use; set to 1 to
+ * debug the BLE seam. Lifecycle milestones (connect/subscribe/ready/disconnect) always log. */
+#define TRITON_BLE_VERBOSE 0
+#if TRITON_BLE_VERBOSE
+#define TritonVLog(...) NSLog(__VA_ARGS__)
+#else
+#define TritonVLog(...) ((void)0)
+#endif
+
 static NSString * const kTritonServiceUUID   = @"100F6C32-1735-4313-B402-38567131E5F3";
 static NSString * const kTritonInputUUID     = @"100F6C7A-1735-4313-B402-38567131E5F3"; /* notify, 0x45 */
 static NSString * const kTritonTimestampUUID = @"100F6C7C-1735-4313-B402-38567131E5F3"; /* notify, 0x47 */
@@ -35,6 +44,8 @@ static NSString * const kTritonReportUUID    = @"100F6C34-1735-4313-B402-3856713
 @property (nonatomic, strong) dispatch_queue_t bleQueue;
 @property (nonatomic, strong) NSMutableDictionary *allChars;       /* uuid(lowercase) -> CBCharacteristic */
 @property (nonatomic, strong) NSMutableArray *candidateChars;      /* writable chars, for the rumble sweep */
+@property (nonatomic, assign) BOOL scanning;                       /* a scan is in progress */
+@property (nonatomic, assign) BOOL polling;                        /* a re-acquire retry is scheduled */
 @end
 
 @implementation TritonBLEBridge
@@ -52,6 +63,7 @@ static NSString * const kTritonReportUUID    = @"100F6C34-1735-4313-B402-3856713
 - (void)start {
     if (self.central) return;
     triton_input_queue_reset();
+    self.scanning = NO; self.polling = NO; self.controller = nil;
     self.central = [[CBCentralManager alloc] initWithDelegate:self queue:self.bleQueue];
     /* scanning begins once state == poweredOn (centralManagerDidUpdateState:) */
 }
@@ -86,25 +98,46 @@ static NSString * const kTritonReportUUID    = @"100F6C34-1735-4313-B402-3856713
  * OS-paired is fine (this is exactly what Steam Link does). FALLBACK: scan for a controller that
  * is advertising in first-time pairing mode. */
 - (void)acquireController {
+    if (self.controller) return;                 /* already acquiring / connected */
     NSArray<CBPeripheral *> *connected =
         [self.central retrieveConnectedPeripheralsWithServices:@[[CBUUID UUIDWithString:@"180A"]]];
     for (CBPeripheral *p in connected) {
         if ([p.name hasPrefix:@"Steam"]) {
             NSLog(@"[Triton] found OS-connected controller '%@'", p.name);
             self.controller = p;                 /* retain before connecting */
+            if (self.scanning) { [self.central stopScan]; self.scanning = NO; }
             [self.central connectPeripheral:p options:nil];
             return;
         }
     }
-    NSLog(@"[Triton] no OS-connected Steam controller; scanning for an advertising one");
-    [self.central scanForPeripheralsWithServices:@[[CBUUID UUIDWithString:kTritonServiceUUID]] options:nil];
+    /* Not connected yet. Scan (catches a first-pairing / advertising controller) AND re-poll the
+     * OS-connected set every 2s: an already-paired controller that powers on MID-SESSION connects
+     * to iOS without advertising our custom service, so only retrieveConnectedPeripherals sees it. */
+    if (!self.scanning) {
+        NSLog(@"[Triton] no OS-connected Steam controller; scanning + polling");
+        [self.central scanForPeripheralsWithServices:@[[CBUUID UUIDWithString:kTritonServiceUUID]] options:nil];
+        self.scanning = YES;
+    }
+    if (!self.polling) {
+        self.polling = YES;
+        __weak typeof(self) wself = self;
+        dispatch_after(dispatch_time(DISPATCH_TIME_NOW, (int64_t)(2.0 * NSEC_PER_SEC)), self.bleQueue, ^{
+            __strong typeof(wself) sself = wself;
+            if (!sself) return;
+            sself.polling = NO;
+            if (!sself.controller && sself.central.state == CBManagerStatePoweredOn) {
+                [sself acquireController];        /* re-poll until the controller appears */
+            }
+        });
+    }
 }
 
 - (void)centralManager:(CBCentralManager *)central didDiscoverPeripheral:(CBPeripheral *)peripheral
      advertisementData:(NSDictionary<NSString *,id> *)advertisementData RSSI:(NSNumber *)RSSI {
+    if (self.controller) return;
     NSLog(@"[Triton] discovered %@ (RSSI %@)", peripheral.name, RSSI);
     self.controller = peripheral;        /* retain before connecting */
-    [central stopScan];
+    [central stopScan]; self.scanning = NO;
     [central connectPeripheral:peripheral options:nil];
 }
 
@@ -114,12 +147,24 @@ static NSString * const kTritonReportUUID    = @"100F6C34-1735-4313-B402-3856713
     [peripheral discoverServices:@[[CBUUID UUIDWithString:kTritonServiceUUID]]];
 }
 
+- (void)centralManager:(CBCentralManager *)central didFailToConnectPeripheral:(CBPeripheral *)peripheral
+                 error:(NSError *)error {
+    NSLog(@"[Triton] connect failed (%@); retrying", error.localizedDescription);
+    self.controller = nil;
+    if (self.central.state == CBManagerStatePoweredOn) [self acquireController];
+}
+
 - (void)centralManager:(CBCentralManager *)central didDisconnectPeripheral:(CBPeripheral *)peripheral
                  error:(NSError *)error {
-    NSLog(@"[Triton] disconnected (%@); re-acquiring", error.localizedDescription);
-    self.ready = NO; self.inputChar = nil; self.reportChar = nil;
+    NSLog(@"[Triton] disconnected (%@); tearing down + re-acquiring", error.localizedDescription);
+    self.ready = NO;
+    self.controller = nil; self.inputChar = nil; self.reportChar = nil;  /* nil controller -> re-acquire re-polls */
+    [self.allChars removeAllObjects];
+    [self.candidateChars removeAllObjects];
+    triton_input_queue_reset();          /* stop replaying the last frame — synthetic goes neutral */
+    if (self.onDisconnect) self.onDisconnect();   /* facade un-suppresses Voidlink's normal gamepad path */
     if (self.central.state == CBManagerStatePoweredOn) {
-        [self acquireController];   /* prefer the OS-connected controller, then scan */
+        [self acquireController];         /* re-poll/scan; onReady fires again on reconnect */
     }
 }
 
@@ -142,7 +187,7 @@ static NSString * const kTritonReportUUID    = @"100F6C34-1735-4313-B402-3856713
          * lands in the log. props bits: 0x02 read, 0x04 writeNoResp, 0x08 write, 0x10 notify. */
         BOOL writable = (ch.properties & (CBCharacteristicPropertyWrite | CBCharacteristicPropertyWriteWithoutResponse)) != 0;
         if (writable) [self.candidateChars addObject:ch];
-        NSLog(@"[Triton] char %{public}s props=0x%02lx%{public}s", [u UTF8String],
+        TritonVLog(@"[Triton] char %{public}s props=0x%02lx%{public}s", [u UTF8String],
               (unsigned long)ch.properties, writable ? " [writable]" : "");
         if ([u caseInsensitiveCompare:kTritonInputUUID] == NSOrderedSame) {
             self.inputChar = ch;
@@ -157,7 +202,7 @@ static NSString * const kTritonReportUUID    = @"100F6C34-1735-4313-B402-3856713
             }
         }
     }
-    NSLog(@"[Triton] %lu chars total, %lu writable candidates for the rumble sweep",
+    TritonVLog(@"[Triton] %lu chars total, %lu writable candidates",
           (unsigned long)self.allChars.count, (unsigned long)self.candidateChars.count);
 }
 
@@ -189,7 +234,7 @@ static NSString * const kTritonReportUUID    = @"100F6C34-1735-4313-B402-3856713
         if (s_in <= 8 || (s_in % 200) == 0) {
             NSMutableString *h = [NSMutableString string];
             for (int i = 0; i < len && i < 32; i++) [h appendFormat:@"%02x ", bytes[i]];
-            NSLog(@"[Triton] BLE in #%d char=%@ len=%d raw: %{public}@",
+            TritonVLog(@"[Triton] BLE in #%d char=%@ len=%d raw: %{public}@",
                   s_in, isInput ? @"input" : @"tstamp", len, h);
         }
         triton_input_push_ble(framed, n + 1);
@@ -254,7 +299,7 @@ static NSString * const kTritonReportUUID    = @"100F6C34-1735-4313-B402-3856713
         char hx[44]; int o = 0;
         for (int i = 0; i < plen && i < 13 && o < (int)sizeof(hx) - 3; i++)
             o += snprintf(hx + o, sizeof(hx) - o, "%02x ", payload[i]);
-        NSLog(@"[Triton] host write kind=%d id=0x%02x inLen=%d -> %dB char=...%02x: %{public}s",
+        TritonVLog(@"[Triton] host write kind=%d id=0x%02x inLen=%d -> %dB char=...%02x: %{public}s",
               kind, data[0], len, plen, (unsigned)(kind == TRITON_WRITE_OUTPUT ? (data[0] + 0x35) & 0xff : 0x34), hx);
     }
 

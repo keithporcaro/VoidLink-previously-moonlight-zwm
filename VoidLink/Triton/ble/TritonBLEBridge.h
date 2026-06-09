@@ -36,6 +36,11 @@ NS_ASSUME_NONNULL_BEGIN
 /* Fired once, on the BLE queue, when the first input report arrives (ready transitions YES). */
 @property (nonatomic, copy, nullable) void (^onReady)(void);
 
+/* Fired on the BLE queue when the controller disconnects (e.g. powered off mid-session). The
+ * facade un-suppresses Voidlink's normal gamepad path; the queue is reset so the synthetic stops
+ * replaying the last frame. onReady fires again if the controller reconnects. */
+@property (nonatomic, copy, nullable) void (^onDisconnect)(void);
+
 /* Host -> controller write, called from the USB/IP server's write sink (via TritonController).
  * kind is TRITON_WRITE_FEATURE or TRITON_WRITE_OUTPUT (triton_device.h). Strips the leading
  * HID report-id and writes the payload to the Valve report characteristic 100F6C34. */
