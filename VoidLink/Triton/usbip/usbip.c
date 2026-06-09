@@ -360,7 +360,7 @@ void usbip_drop_client (void)
 void
 usbip_run (const USB_DEVICE_DESCRIPTOR *dev_dsc)                                /* simple TCP server */
 {
-  struct sockaddr_in serv, cli;
+  struct sockaddr_in6 serv, cli;   /* dual-stack: one AF_INET6 listener serves IPv4 (mapped) + IPv6 */
   int listenfd, sockfd, nb;
 #if defined(LINUX) || defined(__APPLE__)
   unsigned int clilen;
@@ -383,7 +383,7 @@ usbip_run (const USB_DEVICE_DESCRIPTOR *dev_dsc)                                
 
 #endif
 
-  if ((listenfd = socket (PF_INET, SOCK_STREAM, 0)) < 0)
+  if ((listenfd = socket (AF_INET6, SOCK_STREAM, 0)) < 0)
     {
       printf ("socket error : %s \n", strerror (errno));
       return;
@@ -394,10 +394,15 @@ usbip_run (const USB_DEVICE_DESCRIPTOR *dev_dsc)                                
   if (setsockopt(listenfd, SOL_SOCKET, SO_REUSEADDR, (const char*)&reuse, sizeof(reuse)) < 0)
       perror("setsockopt(SO_REUSEADDR) failed");
 
+  int v6only = 0;   /* dual-stack: this IPv6 listener also accepts IPv4 (mapped) clients — so the
+                     * host can attach over LAN/ZeroTier IPv4 *or* IPv6 (default is v6-only on Apple). */
+  if (setsockopt(listenfd, IPPROTO_IPV6, IPV6_V6ONLY, (const char*)&v6only, sizeof(v6only)) < 0)
+      perror("setsockopt(IPV6_V6ONLY) failed");
+
   memset (&serv, 0, sizeof (serv));
-  serv.sin_family = AF_INET;
-  serv.sin_addr.s_addr = htonl (INADDR_ANY);
-  serv.sin_port = htons (TCP_SERV_PORT);
+  serv.sin6_family = AF_INET6;
+  serv.sin6_addr = in6addr_any;
+  serv.sin6_port = htons (TCP_SERV_PORT);
 
   if (bind (listenfd, (sockaddr *) & serv, sizeof (serv)) < 0)
     {
@@ -426,7 +431,11 @@ usbip_run (const USB_DEVICE_DESCRIPTOR *dev_dsc)                                
           break;
         };
         g_usbip_sockfd = sockfd;
-        printf("Connection address:%s\n",inet_ntoa(cli.sin_addr));
+        {
+          char addrstr[INET6_ADDRSTRLEN] = "?";
+          inet_ntop(AF_INET6, &cli.sin6_addr, addrstr, sizeof(addrstr));
+          printf("Connection address:%s\n", addrstr);
+        }
         attached=0;
 
         while(!g_usbip_stop)
