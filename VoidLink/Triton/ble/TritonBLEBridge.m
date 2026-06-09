@@ -127,6 +127,7 @@ static NSString * const kTritonReportUUID    = @"100F6C34-1735-4313-B402-3856713
              error:(NSError *)error {
     for (CBCharacteristic *ch in service.characteristics) {
         NSString *u = ch.UUID.UUIDString;
+        NSLog(@"[Triton] discovered char %@ props=0x%02lx", u, (unsigned long)ch.properties); /* surface any haptic/output char */
         if ([u caseInsensitiveCompare:kTritonInputUUID] == NSOrderedSame) {
             self.inputChar = ch;
             [peripheral setNotifyValue:YES forCharacteristic:ch];
@@ -190,16 +191,50 @@ static NSString * const kTritonReportUUID    = @"100F6C34-1735-4313-B402-3856713
 
 - (void)handleHostWriteKind:(int)kind data:(const unsigned char *)data len:(int)len {
     if (len < 2 || data == NULL) return;
-    /* Strip the leading USB HID report-id byte (e.g. 0x01); BLE carries the command payload.
-     * Copy NOW — the C buffer does not outlive this call — then write on the BLE queue
+
+    /* Two write kinds reach us from the USB/IP write sink, and they frame the report-id differently:
+     *  - TRITON_WRITE_FEATURE ([0x01][0x87 settings…]): the leading byte is the HID *channel*
+     *    report-id (0x01); the real command (0x87) follows. The report char carries the command
+     *    payload, so STRIP the channel byte. (This is the path the working gyro-enable takes.)
+     *  - TRITON_WRITE_OUTPUT ([0x80][type][rumble…]): the leading byte IS the command discriminator
+     *    (0x80 = HAPTIC_RUMBLE) — the controller needs it to recognise a rumble, so KEEP it. Windows
+     *    also zero-pads outputs to OutputReportByteLength (64), so trim to the report's declared
+     *    length (triton_report_desc.h) rather than forwarding 54 trailing zeros. */
+    const unsigned char *payload;
+    int plen;
+    if (kind == TRITON_WRITE_OUTPUT) {
+        payload = data;                       /* keep the 0x80 report-id (rumble discriminator) */
+        switch (data[0]) {                    /* trim Windows' 64B zero-pad to the declared length */
+            case 0x80: plen = 10; break;      /* HAPTIC_RUMBLE */
+            case 0x81: plen = 8;  break;
+            case 0x82: plen = 4;  break;
+            case 0x83: plen = 10; break;
+            case 0x84: plen = 9;  break;
+            case 0x85: plen = 4;  break;
+            case 0x86: plen = 4;  break;
+            default:   plen = len; break;      /* 0x87/0x88/0x89 are genuinely 64B */
+        }
+        if (plen > len) plen = len;
+    } else {
+        payload = data + 1;                   /* strip the 0x01 channel report-id */
+        plen    = len - 1;
+    }
+
+    /* Diagnostic (public): which kind, inbound vs trimmed length, and the leading bytes. */
+    {
+        NSMutableString *h = [NSMutableString string];
+        for (int i = 0; i < plen && i < 12; i++) [h appendFormat:@"%02x ", payload[i]];
+        NSLog(@"[Triton] host write kind=%d inLen=%d -> %dB to report char: %{public}@", kind, len, plen, h);
+    }
+
+    /* Copy NOW — the C buffer does not outlive this call — then write on the BLE queue
      * (CoreBluetooth peripheral ops must run on the central's queue). */
     NSMutableData *out = [NSMutableData data];
 #if TRITON_BLE_C0_WRAPPER
-    unsigned char seg = 0xC0;            /* REPORT_SEGMENT_DATA_FLAG | LAST_FLAG (spec §9.5) */
+    unsigned char seg = 0xC0;                 /* REPORT_SEGMENT_DATA_FLAG | LAST_FLAG (spec §9.5) */
     [out appendBytes:&seg length:1];
 #endif
-    [out appendBytes:(data + 1) length:(NSUInteger)(len - 1)];
-    (void)kind;   /* feature vs output both ride the report char in this first cut */
+    [out appendBytes:payload length:(NSUInteger)plen];
 
     dispatch_async(self.bleQueue, ^{
         if (self.controller && self.reportChar) {
