@@ -43,7 +43,7 @@ int main(void)
     assert(buf[0] == 0x42);                  /* report id rewritten 0x45 -> 0x42 */
     for (int i = 0; i < TRITON_IMU_OFFSET - 1; i++)        /* non-IMU fields (struct off 0..28) copied */
         assert(buf[1 + i] == (unsigned char)(0x10 + i));
-    for (int i = 0; i < TRITON_IMU_LEN; i++)               /* IMU (wire 30..45) zeroed (frozen-IMU workaround) */
+    for (int i = 0; i < TRITON_IMU_LEN; i++)               /* first frame: no ts history -> IMU gated off (zeroed) */
         assert(buf[TRITON_IMU_OFFSET + i] == 0x00);
     for (int i = 0; i < (TRITON_USB_PAYLOAD - TRITON_NOQUAT_LEN); i++)
         assert(buf[1 + TRITON_NOQUAT_LEN + i] == 0x00);    /* 8 USB-only trailing bytes zero */
@@ -132,6 +132,48 @@ int main(void)
         assert(buf[9] == 0xFD && buf[10] == 0x14 && buf[16] == 0x80);   /* sticks  */
         /* the frozen IMU (was C3 7A C3 13 …) is zeroed -> no Steam gyro-mouse cursor-fly */
         for (int i = 0; i < TRITON_IMU_LEN; i++) assert(buf[TRITON_IMU_OFFSET + i] == 0x00);
+    }
+
+    /* 14. IMU liveness gate — FROZEN: many 0x45 frames whose IMU timestamp never advances
+     *     (gyro disabled on the controller, the real default). The stale non-zero IMU must be
+     *     zeroed so it can't drive Steam's gyro-mouse, while non-IMU fields still pass through. */
+    {
+        triton_input_queue_reset();
+        unsigned char f[46];
+        f[0] = TRITON_BLE_STATE_ID;
+        for (int i = 0; i < TRITON_NOQUAT_LEN; i++) f[1 + i] = 0x00;
+        for (int i = 0; i < TRITON_IMU_LEN; i++) f[1 + 29 + i] = (unsigned char)(0xC0 + i); /* constant IMU */
+        f[1 + 9] = 0xAB;                                       /* live sLeftStickX low byte (struct off 9) */
+        for (int k = 0; k < 8 /* > gate's stale limit */; k++)   /* push past the stale threshold */
+            assert(triton_input_push_ble(f, sizeof f) == 1);
+        n = triton_input_pop(buf, sizeof buf);
+        assert(n == TRITON_USB_WIRE);
+        assert(buf[10] == 0xAB);                               /* non-IMU field preserved */
+        for (int i = 0; i < TRITON_IMU_LEN; i++)
+            assert(buf[TRITON_IMU_OFFSET + i] == 0x00);        /* frozen IMU zeroed */
+    }
+
+    /* 15. IMU liveness gate — LIVE: 0x45 frames whose IMU timestamp advances each frame (gyro
+     *     enabled, e.g. Steam wrote GYRO_MODE). The IMU must pass through so real motion reaches
+     *     Steam — the regression that the unconditional memset would have wrongly clobbered. */
+    {
+        triton_input_queue_reset();
+        unsigned char f[46];
+        f[0] = TRITON_BLE_STATE_ID;
+        for (int frame = 0; frame < 8 /* > gate's stale limit */; frame++) {
+            for (int i = 0; i < TRITON_NOQUAT_LEN; i++) f[1 + i] = 0x00;
+            unsigned ts = 0x00001000u + (unsigned)frame * 0x40u;   /* advancing u32 timestamp */
+            f[1 + 29] = (unsigned char)(ts & 0xFF);
+            f[1 + 30] = (unsigned char)((ts >> 8) & 0xFF);
+            f[1 + 31] = (unsigned char)((ts >> 16) & 0xFF);
+            f[1 + 32] = (unsigned char)((ts >> 24) & 0xFF);
+            f[1 + 33] = 0x11; f[1 + 34] = 0x22;                    /* accel sample bytes */
+            assert(triton_input_push_ble(f, sizeof f) == 1);
+        }
+        n = triton_input_pop(buf, sizeof buf);
+        assert(n == TRITON_USB_WIRE);
+        assert(buf[TRITON_IMU_OFFSET] != 0x00 || buf[TRITON_IMU_OFFSET + 1] != 0x00); /* ts survived */
+        assert(buf[TRITON_IMU_OFFSET + 4] == 0x11 && buf[TRITON_IMU_OFFSET + 5] == 0x22); /* accel survived */
     }
 
     printf("PASS\n");

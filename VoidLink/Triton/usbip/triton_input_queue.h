@@ -34,7 +34,9 @@ void triton_input_queue_reset(void);
 
 /* Producer (BLE thread): hand a raw BLE report — report[0] = BLE report id,
  * report[1..len-1] = payload. Translates a state report (0x45, or a passthrough 0x42)
- * into the USB 0x42 wire form and stores it as the latest state.
+ * into the USB 0x42 wire form and stores it as the latest state. The IMU block is gated:
+ * passed through only while its u32 timestamp is advancing (gyro enabled), zeroed while frozen
+ * (gyro off) so a stale sample can't drive Steam's gyro-mouse — see triton_input_queue.c.
  * Returns 1 if a USB state report was produced, 0 if the report was ignored
  * (e.g. a non-state BLE report id, or len < 1). */
 int triton_input_push_ble(const unsigned char *report, int len);

@@ -16,12 +16,55 @@ static pthread_mutex_t g_lock = PTHREAD_MUTEX_INITIALIZER;
 static unsigned char   g_latest[TRITON_USB_WIRE];   /* latest USB-form 0x42 report */
 static int             g_have = 0;                   /* 1 once a real report stored  */
 
+/* --- IMU liveness gate -------------------------------------------------------------------
+ * The controller streams gyro/accel only after the host writes GYRO_MODE (reg 0x30); until
+ * then the IMU block — including its leading u32 timestamp — is FROZEN at a stale non-zero
+ * sample. A frozen non-zero gyro reads to Steam as a *constant* rotation and drives its
+ * desktop gyro-mouse (the cursor "fly"). So pass the IMU through only while its timestamp is
+ * advancing, and zero it while frozen. Self-correcting: when Steam enables gyro (its own
+ * register write, forwarded to the controller over BLE) the timestamp starts ticking and live
+ * data flows; when gyro is off the block is zeroed — no build flag to toggle. Confirmed on real
+ * hardware over USB 2026-06-08: feature 0x01 [87 03 30 18 00] -> timestamp climbs + live
+ * accel/gyro in the same 0x45 report; [87 03 30 00 00] -> re-frozen. Mutated only by the single
+ * producer thread (triton_input_push_ble) / reset, so it needs no extra lock. */
+#define TRITON_IMU_STALE_LIMIT 4    /* unchanged-timestamp frames before declaring frozen */
+static unsigned g_imu_last_ts = 0;
+static int      g_imu_have_ts = 0;
+static int      g_imu_stale   = 0;
+
+#ifndef TRITON_BLE_LIVE_IMU
+static int triton_imu_is_live(const unsigned char *usb)
+{
+    unsigned ts = (unsigned)usb[TRITON_IMU_OFFSET]
+                | ((unsigned)usb[TRITON_IMU_OFFSET + 1] << 8)
+                | ((unsigned)usb[TRITON_IMU_OFFSET + 2] << 16)
+                | ((unsigned)usb[TRITON_IMU_OFFSET + 3] << 24);
+    int live;
+    if (!g_imu_have_ts) {
+        g_imu_have_ts = 1;
+        g_imu_stale   = TRITON_IMU_STALE_LIMIT;   /* unknown until it moves -> treat as frozen */
+        live = 0;
+    } else if (ts != g_imu_last_ts) {
+        g_imu_stale = 0;
+        live = 1;
+    } else {
+        if (g_imu_stale < TRITON_IMU_STALE_LIMIT) g_imu_stale++;
+        live = (g_imu_stale < TRITON_IMU_STALE_LIMIT);
+    }
+    g_imu_last_ts = ts;
+    return live;
+}
+#endif  /* !TRITON_BLE_LIVE_IMU */
+
 void triton_input_queue_reset(void)
 {
     pthread_mutex_lock(&g_lock);
     memset(g_latest, 0, sizeof g_latest);
     g_latest[0] = TRITON_USB_STATE_ID;   /* neutral 0x42 report */
     g_have = 0;
+    g_imu_have_ts = 0;                    /* re-arm the IMU liveness gate */
+    g_imu_stale   = 0;
+    g_imu_last_ts = 0;
     pthread_mutex_unlock(&g_lock);
 }
 
@@ -42,14 +85,6 @@ int triton_input_push_ble(const unsigned char *report, int len)
         int n = len - 1;
         if (n > TRITON_NOQUAT_LEN) n = TRITON_NOQUAT_LEN;
         if (n > 0) memcpy(usb + 1, report + 1, (size_t)n);
-#ifndef TRITON_BLE_LIVE_IMU
-        /* The IMU bytes arrive FROZEN over BLE (the live gyro/accel appear to come on a
-         * separate path, TBD — see TritonBLEBridge raw-BLE log). A frozen non-zero gyro drives
-         * Steam's desktop gyro-mouse and flies the cursor, so zero the IMU until the real IMU
-         * framing is wired. Sticks/buttons/triggers/pads are unaffected. Define TRITON_BLE_LIVE_IMU
-         * once the IMU is sourced correctly. */
-        memset(usb + TRITON_IMU_OFFSET, 0, TRITON_IMU_LEN);
-#endif
     } else if (id == TRITON_USB_STATE_ID) {
         /* Already a USB 0x42 report (e.g. a recorded-USB replay or canned feed): copy
          * the whole thing, including the report id, up to the wire length. */
@@ -63,6 +98,15 @@ int triton_input_push_ble(const unsigned char *report, int len)
          * Returning 0 lets the caller decide; a future revision can multiplex these. */
         return 0;
     }
+
+    /* Gate the IMU on the assembled report: live gyro (advancing timestamp) passes through;
+     * a frozen (gyro-disabled) sample is zeroed so it can't drive Steam's gyro-mouse. The
+     * TRITON_BLE_LIVE_IMU build disables the gate (raw passthrough) for A/B contrast. */
+#ifndef TRITON_BLE_LIVE_IMU
+    if (!triton_imu_is_live(usb)) {
+        memset(usb + TRITON_IMU_OFFSET, 0, TRITON_IMU_LEN);
+    }
+#endif
 
     pthread_mutex_lock(&g_lock);
     memcpy(g_latest, usb, sizeof usb);

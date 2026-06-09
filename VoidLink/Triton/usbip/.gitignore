@@ -2,3 +2,4 @@
 triton-server
 test_input_queue
 *.o
+triton-server-nofix
