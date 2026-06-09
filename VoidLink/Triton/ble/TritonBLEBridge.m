@@ -149,20 +149,32 @@ static NSString * const kTritonReportUUID    = @"100F6C34-1735-4313-B402-3856713
     int len = (int)ch.value.length;
     NSString *u = ch.UUID.UUIDString;
 
-    if ([u caseInsensitiveCompare:kTritonInputUUID] == NSOrderedSame ||
-        [u caseInsensitiveCompare:kTritonTimestampUUID] == NSOrderedSame) {
-        /* Raw state report ([0x45|0x47][payload]) straight into the BLE->USB seam. */
-        /* Diagnostic: log the first few + 1-in-200 raw reports (with the source char + length)
-         * so we can see the real wire format — esp. where the live IMU/gyro actually arrives. */
+    BOOL isInput     = ([u caseInsensitiveCompare:kTritonInputUUID]     == NSOrderedSame);
+    BOOL isTimestamp = ([u caseInsensitiveCompare:kTritonTimestampUUID] == NSOrderedSame);
+    if (isInput || isTimestamp) {
+        /* The GATT characteristic VALUE is the raw report payload with NO HID report-id byte
+         * (the report-id is implied by the characteristic UUID). The queue's contract is
+         * [report-id][payload], so prepend the id here: 0x45 for the input/state char, 0x47 for
+         * the timestamp char. Without this the queue saw payload[0] (= seq_num) != 0x45 and
+         * dropped every frame, leaving the synthetic stuck on its neutral all-zero report. */
+        unsigned char framed[64];
+        framed[0] = isInput ? TRITON_BLE_STATE_ID : 0x47;
+        int n = len;
+        if (n > (int)sizeof(framed) - 1) n = (int)sizeof(framed) - 1;
+        memcpy(framed + 1, bytes, (size_t)n);
+
+        /* Diagnostic: log the first few + 1-in-200 RAW payloads (public so the hex is visible)
+         * so we can read the real wire format — seq, sticks, and where the live IMU/gyro lands. */
         static int s_in = 0;
         s_in++;
         if (s_in <= 8 || (s_in % 200) == 0) {
             NSMutableString *h = [NSMutableString string];
-            for (int i = 0; i < len && i < 24; i++) [h appendFormat:@"%02x ", bytes[i]];
-            NSLog(@"[Triton] BLE in #%d char=%@ len=%d: %@", s_in, [u substringToIndex:8], len, h);
+            for (int i = 0; i < len && i < 32; i++) [h appendFormat:@"%02x ", bytes[i]];
+            NSLog(@"[Triton] BLE in #%d char=%@ len=%d raw: %{public}@",
+                  s_in, isInput ? @"input" : @"tstamp", len, h);
         }
-        triton_input_push_ble(bytes, len);
-        if (!self.ready) {
+        triton_input_push_ble(framed, n + 1);
+        if (isInput && !self.ready) {
             self.ready = YES;
             NSLog(@"[Triton] first input report (%d bytes) — device ready", len);
             if (self.onReady) self.onReady();
