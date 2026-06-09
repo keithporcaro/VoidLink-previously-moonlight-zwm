@@ -23,11 +23,8 @@ static NSString * const kTritonReportUUID    = @"100F6C34-1735-4313-B402-3856713
 /* Set (lowercase) to the discovered haptic/output characteristic to LOCK rumble there; while nil,
  * OUTPUT writes SWEEP across every writable characteristic (~1s each) so we can feel which one
  * buzzes and read its UUID from the [Triton] RUMBLE SWEEP log line. */
-static NSString *kTritonHapticUUID = nil;
-/* Sweep-found haptic characteristic index (candidate 1 buzzed, 2026-06-09). -1 = sweep again.
- * The resolved UUID is logged once as "LOCKED haptic = candidate 1 uuid=…" — promote it to
- * kTritonHapticUUID for an order-independent lock. */
-static int kTritonHapticIndex = 1;
+/* OUTPUT reports route per-id to characteristic 100F6C<id+0x35> (computed in handleHostWriteKind);
+ * no fixed index/UUID needed. candidateChars remains only as a discovery-order fallback. */
 
 @interface TritonBLEBridge () <CBCentralManagerDelegate, CBPeripheralDelegate>
 @property (nonatomic, strong) CBCentralManager *central;
@@ -213,61 +210,52 @@ static int kTritonHapticIndex = 1;
 - (void)handleHostWriteKind:(int)kind data:(const unsigned char *)data len:(int)len {
     if (len < 2 || data == NULL) return;
 
-    /* FEATURE writes ([0x01][0x87 settings…]) strip the channel report-id (the working gyro path).
-     * OUTPUT writes ([0x80][type][rumble…]) are trimmed to the declared length, then routed: to a
-     * dedicated haptic char if we've identified one (kTritonHapticUUID, id implied -> stripped), or
-     * — until then — SWEPT across every writable characteristic ~1s each so we can feel which one
-     * buzzes and read its UUID from the log. */
-    const unsigned char *payload = data;
-    int plen = len;
-    CBCharacteristic *target = self.reportChar;
+    /* FEATURE writes ([0x01][0x87 settings…]): strip the 0x01 channel report-id, write the command
+     * to the report char 100F6C34 (the proven gyro/lizard path). OUTPUT writes ([0xNN][payload…]):
+     * Valve routes each report id 0xNN to its OWN characteristic 100F6C<NN+0x35> (id stripped — it
+     * only selects the char). 0x80 rumble->B5, 0x81 trackpad pulse->B6, 0x82 haptic cmd->B7, etc. */
+    const unsigned char *payload = data + 1;          /* default: strip the leading report-id */
+    int plen = len - 1;
+    CBCharacteristic *target = self.reportChar;        /* feature commands ride 100F6C34 */
 
     if (kind == TRITON_WRITE_OUTPUT) {
-        switch (data[0]) {                    /* trim Windows' 64B zero-pad to the declared length */
-            case 0x80: plen = 10; break; case 0x81: plen = 8; break; case 0x82: plen = 4; break;
-            case 0x83: plen = 10; break; case 0x84: plen = 9; break; case 0x85: plen = 4; break;
-            case 0x86: plen = 4;  break; default: plen = len; break;
+        unsigned char rid = data[0];
+        int slen;                                      /* declared STRIPPED length (wire = +1) */
+        switch (rid) {
+            case 0x80: slen = 9; break;   /* grip rumble    -> 100F6CB5 (left/right motor fields)  */
+            case 0x81: slen = 7; break;   /* trackpad pulse -> 100F6CB6 (side: 01=L 02=R 03=both)  */
+            case 0x82: slen = 3; break;   /* haptic command -> 100F6CB7 (Steam ping/test buzz)     */
+            case 0x83: slen = 9; break;   /* LFO tone       -> 100F6CB8 */
+            case 0x84: slen = 8; break;   /* log sweep      -> 100F6CB9 */
+            case 0x85: slen = 3; break;   /* script         -> 100F6CBA */
+            case 0x86: slen = 3; break;   /* vendor         -> 100F6CBB */
+            case 0x87: case 0x88: case 0x89: slen = 63; break;  /* vendor big -> 100F6CBC/BD/BE */
+            default:   slen = len - 1; break;
         }
-        if (plen > len) plen = len;
-        CBCharacteristic *haptic = (kTritonHapticUUID ? self.allChars[kTritonHapticUUID] : nil);
-        if (!haptic && kTritonHapticIndex >= 0 && kTritonHapticIndex < (int)self.candidateChars.count) {
-            haptic = self.candidateChars[kTritonHapticIndex];   /* lock to the sweep-found candidate */
-            static BOOL s_logged = NO;
-            if (!s_logged) { s_logged = YES;
-                /* Log UUID as integer BYTES — Console can't decode string args from iOS device logs,
-                 * but scalars survive. A 100F6CXX-1735-… char prints as 10 0f 6c XX 17 35 43 13 … */
-                const unsigned char *ub = (const unsigned char *)haptic.UUID.data.bytes;
-                NSUInteger ul = haptic.UUID.data.length;
-                NSLog(@"[Triton] LOCKED haptic candidate %d uuid(len=%lu)= %02x %02x %02x %02x %02x %02x %02x %02x",
-                      kTritonHapticIndex, (unsigned long)ul,
-                      ul>0?ub[0]:0, ul>1?ub[1]:0, ul>2?ub[2]:0, ul>3?ub[3]:0,
-                      ul>4?ub[4]:0, ul>5?ub[5]:0, ul>6?ub[6]:0, ul>7?ub[7]:0); }
-        }
-        if (haptic) {                                 /* LOCKED: route to the identified haptic char */
-            target = haptic; payload = data + 1; plen -= 1;     /* report-id implied by the char */
-        } else if (self.candidateChars.count > 0) {   /* SWEEP: ~1s (25 writes @40ms) per candidate */
+        if (slen > len - 1) slen = len - 1;            /* clamp to what arrived (Windows pads to 64) */
+        plen = slen;                                   /* payload already = data + 1 */
+
+        NSString *uuid = [NSString stringWithFormat:@"100f6c%02x-1735-4313-b402-38567131e5f3",
+                          (rid + 0x35) & 0xff];
+        target = self.allChars[uuid];
+        if (!target && self.candidateChars.count > 0) {  /* firmware != id+0x35: sweep, never drop */
             static int s_out = 0;
             NSUInteger idx = (s_out / 25) % self.candidateChars.count;
-            if ((s_out % 25) == 0) {
-                CBCharacteristic *c = self.candidateChars[idx];
-                NSLog(@"[Triton] RUMBLE SWEEP -> candidate %lu/%lu uuid=%{public}s",
-                      (unsigned long)idx, (unsigned long)self.candidateChars.count,
-                      [c.UUID.UUIDString UTF8String]);
-            }
+            if ((s_out % 25) == 0)
+                NSLog(@"[Triton] no per-report char for id=0x%02x — sweeping candidate %lu", rid, (unsigned long)idx);
             s_out++;
-            target = self.candidateChars[idx]; payload = data + 1; plen -= 1;
+            target = self.candidateChars[idx];
         }
-    } else {
-        payload = data + 1; plen = len - 1;           /* strip the 0x01 channel report-id */
     }
 
-    /* Diagnostic (public, C string so it lands in the log). Throttle the kind=1 keepalive spam. */
+    /* Diagnostic (public, C string). Always log OUTPUT (haptics); throttle the kind=1 keepalive. */
     static int s_w = 0; s_w++;
     if (kind == TRITON_WRITE_OUTPUT || s_w <= 6 || (s_w % 20) == 0) {
         char hx[44]; int o = 0;
         for (int i = 0; i < plen && i < 13 && o < (int)sizeof(hx) - 3; i++)
             o += snprintf(hx + o, sizeof(hx) - o, "%02x ", payload[i]);
-        NSLog(@"[Triton] host write kind=%d inLen=%d -> %dB: %{public}s", kind, len, plen, hx);
+        NSLog(@"[Triton] host write kind=%d id=0x%02x inLen=%d -> %dB char=...%02x: %{public}s",
+              kind, data[0], len, plen, (unsigned)(kind == TRITON_WRITE_OUTPUT ? (data[0] + 0x35) & 0xff : 0x34), hx);
     }
 
     /* Copy NOW — the C buffer does not outlive this call — then write on the BLE queue. */
