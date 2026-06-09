@@ -328,11 +328,33 @@ static volatile int g_usbip_stop = 0;
 static int g_usbip_listenfd = -1;
 static int g_usbip_sockfd   = -1;
 
+/* Readiness gate: when 0, OP_REQ_IMPORT is refused (the host's `usbip attach` fails and retries),
+ * so the host can only attach while the real controller is connected over BLE. Default 1 so the
+ * Tier-1 bench (canned data, no BLE bridge) serves immediately; the iOS facade closes it until the
+ * first BLE report and toggles it on BLE connect/disconnect. */
+static volatile int g_usbip_ready = 1;
+
 void usbip_stop (void)
 {
   g_usbip_stop = 1;
   if (g_usbip_sockfd   >= 0) close (g_usbip_sockfd);
   if (g_usbip_listenfd >= 0) close (g_usbip_listenfd);
+}
+
+/* Open/close the readiness gate (above). Safe to call from any thread. */
+void usbip_set_ready (int on)
+{
+  g_usbip_ready = on ? 1 : 0;
+}
+
+/* Drop ONLY the active client connection (not the listener) — used on BLE disconnect so usbip-win2
+ * sees a TCP reset and surprise-removes the device (a real disconnect in Steam). The accept loop
+ * then returns to accept() and, with the gate closed, refuses re-import until BLE returns. Mirrors
+ * usbip_stop()'s cross-thread close pattern. */
+void usbip_drop_client (void)
+{
+  int fd = g_usbip_sockfd;
+  if (fd >= 0) close (fd);
 }
 
 void
@@ -460,6 +482,11 @@ usbip_run (const USB_DEVICE_DESCRIPTOR *dev_dsc)                                
 #ifdef _DEBUG
              print_recv(busid, 32,"Busid");
 #endif
+               if (!g_usbip_ready)                  /* BLE down: refuse import -> host attach fails + retries */
+               {
+                 printf("import refused: not ready (BLE down)\n");
+                 break;                             /* drop the connection; outer loop re-accepts */
+               }
                handle_attach(dev_dsc,&rep);
                if (send (sockfd, (char *)&rep, sizeof(OP_REP_IMPORT), 0) != sizeof(OP_REP_IMPORT))
                {

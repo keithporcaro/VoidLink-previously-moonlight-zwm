@@ -32,6 +32,12 @@ void triton_usbip_start(void);
 /* Stop the server from another thread (unblocks accept, makes triton_usbip_start return). */
 void triton_usbip_stop(void);
 
+/* Gate host attaches on BLE readiness: 1 = accept OP_REQ_IMPORT, 0 = refuse (host attach retries). */
+void triton_usbip_set_ready(int on);
+
+/* Drop the active host attachment (BLE disconnect) -> usbip-win2 surprise-removal -> Steam disconnect. */
+void triton_usbip_drop_client(void);
+
 /* Print the device + configuration descriptor bytes (Tier-1 diagnostic / regression diff). */
 void triton_dump_descriptors(void);
 

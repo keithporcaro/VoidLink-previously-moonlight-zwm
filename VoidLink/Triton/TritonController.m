@@ -43,6 +43,7 @@ static void triton_write_sink_trampoline(int kind, const unsigned char *data, in
         self.bridge.onReady = ^{
             __strong typeof(wself) sself = wself;
             sself.controllerSupport.usbipSteamControllerActive = YES;
+            triton_usbip_set_ready(1);   /* BLE live — open the import gate so the host can attach */
             /* For full-fidelity live GET_FEATURE round-trips (spec §9.5), enable once the BLE
              * reply framing is verified on-device:  triton_set_feature_live(1);
              * Off by default keeps the proven synthetic/echo responder (GREEN). */
@@ -51,8 +52,11 @@ static void triton_write_sink_trampoline(int kind, const unsigned char *data, in
         self.bridge.onDisconnect = ^{
             __strong typeof(wself) sself = wself;
             sself.controllerSupport.usbipSteamControllerActive = NO;  /* controller gone -> restore normal path */
+            triton_usbip_set_ready(0);     /* refuse new host attaches while BLE is down ... */
+            triton_usbip_drop_client();    /* ... and drop the active one -> Steam sees a real disconnect */
             NSLog(@"[Triton] controller disconnected — normal gamepad path restored");
         };
+        triton_usbip_set_ready(0);   /* host can't attach until the first BLE report (onReady above) */
         [self.bridge start];
 
         /* 3) Run the USB/IP server (blocking) on a dedicated thread so the host can attach. */

@@ -381,6 +381,8 @@ typedef struct  __attribute__ ((__packed__)) _StandardDeviceRequest
 void send_usb_req(int sockfd, USBIP_RET_SUBMIT * usb_req, char * data, unsigned int size, unsigned int status);
 void usbip_run (const USB_DEVICE_DESCRIPTOR *dev_dsc);
 void usbip_stop (void);   /* stop usbip_run from another thread (iOS lifecycle) */
+void usbip_set_ready (int on);   /* gate OP_REQ_IMPORT: 1 = accept attaches, 0 = refuse (BLE down) */
+void usbip_drop_client (void);   /* drop the active client (BLE disconnect -> host surprise-removal) */
 
 //implemented by user
 extern const USB_DEVICE_DESCRIPTOR dev_dsc;
