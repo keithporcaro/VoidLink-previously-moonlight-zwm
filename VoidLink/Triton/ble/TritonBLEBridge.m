@@ -20,6 +20,11 @@ static NSString * const kTritonInputUUID     = @"100F6C7A-1735-4313-B402-3856713
 static NSString * const kTritonTimestampUUID = @"100F6C7C-1735-4313-B402-38567131E5F3"; /* notify, 0x47 */
 static NSString * const kTritonReportUUID    = @"100F6C34-1735-4313-B402-38567131E5F3"; /* write/read    */
 
+/* Set (lowercase) to the discovered haptic/output characteristic to LOCK rumble there; while nil,
+ * OUTPUT writes SWEEP across every writable characteristic (~1s each) so we can feel which one
+ * buzzes and read its UUID from the [Triton] RUMBLE SWEEP log line. */
+static NSString *kTritonHapticUUID = nil;
+
 @interface TritonBLEBridge () <CBCentralManagerDelegate, CBPeripheralDelegate>
 @property (nonatomic, strong) CBCentralManager *central;
 @property (nonatomic, strong) CBPeripheral     *controller;
@@ -27,6 +32,8 @@ static NSString * const kTritonReportUUID    = @"100F6C34-1735-4313-B402-3856713
 @property (nonatomic, strong) CBCharacteristic *reportChar;
 @property (nonatomic, assign) BOOL ready;
 @property (nonatomic, strong) dispatch_queue_t bleQueue;
+@property (nonatomic, strong) NSMutableDictionary *allChars;       /* uuid(lowercase) -> CBCharacteristic */
+@property (nonatomic, strong) NSMutableArray *candidateChars;      /* writable chars, for the rumble sweep */
 @end
 
 @implementation TritonBLEBridge
@@ -125,9 +132,17 @@ static NSString * const kTritonReportUUID    = @"100F6C34-1735-4313-B402-3856713
 
 - (void)peripheral:(CBPeripheral *)peripheral didDiscoverCharacteristicsForService:(CBService *)service
              error:(NSError *)error {
+    if (!self.allChars) self.allChars = [NSMutableDictionary dictionary];
+    if (!self.candidateChars) self.candidateChars = [NSMutableArray array];
     for (CBCharacteristic *ch in service.characteristics) {
         NSString *u = ch.UUID.UUIDString;
-        NSLog(@"[Triton] discovered char %@ props=0x%02lx", u, (unsigned long)ch.properties); /* surface any haptic/output char */
+        self.allChars[u.lowercaseString] = ch;
+        /* %{public}s — an %@/object arg reads back as <private>/<decode: missing data>; a C string
+         * lands in the log. props bits: 0x02 read, 0x04 writeNoResp, 0x08 write, 0x10 notify. */
+        BOOL writable = (ch.properties & (CBCharacteristicPropertyWrite | CBCharacteristicPropertyWriteWithoutResponse)) != 0;
+        if (writable) [self.candidateChars addObject:ch];
+        NSLog(@"[Triton] char %{public}s props=0x%02lx%{public}s", [u UTF8String],
+              (unsigned long)ch.properties, writable ? " [writable]" : "");
         if ([u caseInsensitiveCompare:kTritonInputUUID] == NSOrderedSame) {
             self.inputChar = ch;
             [peripheral setNotifyValue:YES forCharacteristic:ch];
@@ -141,6 +156,8 @@ static NSString * const kTritonReportUUID    = @"100F6C34-1735-4313-B402-3856713
             }
         }
     }
+    NSLog(@"[Triton] %lu chars total, %lu writable candidates for the rumble sweep",
+          (unsigned long)self.allChars.count, (unsigned long)self.candidateChars.count);
 }
 
 - (void)peripheral:(CBPeripheral *)peripheral didUpdateValueForCharacteristic:(CBCharacteristic *)ch
@@ -192,54 +209,63 @@ static NSString * const kTritonReportUUID    = @"100F6C34-1735-4313-B402-3856713
 - (void)handleHostWriteKind:(int)kind data:(const unsigned char *)data len:(int)len {
     if (len < 2 || data == NULL) return;
 
-    /* Two write kinds reach us from the USB/IP write sink, and they frame the report-id differently:
-     *  - TRITON_WRITE_FEATURE ([0x01][0x87 settings…]): the leading byte is the HID *channel*
-     *    report-id (0x01); the real command (0x87) follows. The report char carries the command
-     *    payload, so STRIP the channel byte. (This is the path the working gyro-enable takes.)
-     *  - TRITON_WRITE_OUTPUT ([0x80][type][rumble…]): the leading byte IS the command discriminator
-     *    (0x80 = HAPTIC_RUMBLE) — the controller needs it to recognise a rumble, so KEEP it. Windows
-     *    also zero-pads outputs to OutputReportByteLength (64), so trim to the report's declared
-     *    length (triton_report_desc.h) rather than forwarding 54 trailing zeros. */
-    const unsigned char *payload;
-    int plen;
+    /* FEATURE writes ([0x01][0x87 settings…]) strip the channel report-id (the working gyro path).
+     * OUTPUT writes ([0x80][type][rumble…]) are trimmed to the declared length, then routed: to a
+     * dedicated haptic char if we've identified one (kTritonHapticUUID, id implied -> stripped), or
+     * — until then — SWEPT across every writable characteristic ~1s each so we can feel which one
+     * buzzes and read its UUID from the log. */
+    const unsigned char *payload = data;
+    int plen = len;
+    CBCharacteristic *target = self.reportChar;
+
     if (kind == TRITON_WRITE_OUTPUT) {
-        payload = data;                       /* keep the 0x80 report-id (rumble discriminator) */
         switch (data[0]) {                    /* trim Windows' 64B zero-pad to the declared length */
-            case 0x80: plen = 10; break;      /* HAPTIC_RUMBLE */
-            case 0x81: plen = 8;  break;
-            case 0x82: plen = 4;  break;
-            case 0x83: plen = 10; break;
-            case 0x84: plen = 9;  break;
-            case 0x85: plen = 4;  break;
-            case 0x86: plen = 4;  break;
-            default:   plen = len; break;      /* 0x87/0x88/0x89 are genuinely 64B */
+            case 0x80: plen = 10; break; case 0x81: plen = 8; break; case 0x82: plen = 4; break;
+            case 0x83: plen = 10; break; case 0x84: plen = 9; break; case 0x85: plen = 4; break;
+            case 0x86: plen = 4;  break; default: plen = len; break;
         }
         if (plen > len) plen = len;
+        CBCharacteristic *haptic = (kTritonHapticUUID ? self.allChars[kTritonHapticUUID] : nil);
+        if (haptic) {                                 /* LOCKED: route to the identified haptic char */
+            target = haptic; payload = data + 1; plen -= 1;     /* report-id implied by the char */
+        } else if (self.candidateChars.count > 0) {   /* SWEEP: ~1s (25 writes @40ms) per candidate */
+            static int s_out = 0;
+            NSUInteger idx = (s_out / 25) % self.candidateChars.count;
+            if ((s_out % 25) == 0) {
+                CBCharacteristic *c = self.candidateChars[idx];
+                NSLog(@"[Triton] RUMBLE SWEEP -> candidate %lu/%lu uuid=%{public}s",
+                      (unsigned long)idx, (unsigned long)self.candidateChars.count,
+                      [c.UUID.UUIDString UTF8String]);
+            }
+            s_out++;
+            target = self.candidateChars[idx]; payload = data + 1; plen -= 1;
+        }
     } else {
-        payload = data + 1;                   /* strip the 0x01 channel report-id */
-        plen    = len - 1;
+        payload = data + 1; plen = len - 1;           /* strip the 0x01 channel report-id */
     }
 
-    /* Diagnostic (public): which kind, inbound vs trimmed length, and the leading bytes. */
-    {
-        NSMutableString *h = [NSMutableString string];
-        for (int i = 0; i < plen && i < 12; i++) [h appendFormat:@"%02x ", payload[i]];
-        NSLog(@"[Triton] host write kind=%d inLen=%d -> %dB to report char: %{public}@", kind, len, plen, h);
+    /* Diagnostic (public, C string so it lands in the log). Throttle the kind=1 keepalive spam. */
+    static int s_w = 0; s_w++;
+    if (kind == TRITON_WRITE_OUTPUT || s_w <= 6 || (s_w % 20) == 0) {
+        char hx[44]; int o = 0;
+        for (int i = 0; i < plen && i < 13 && o < (int)sizeof(hx) - 3; i++)
+            o += snprintf(hx + o, sizeof(hx) - o, "%02x ", payload[i]);
+        NSLog(@"[Triton] host write kind=%d inLen=%d -> %dB: %{public}s", kind, len, plen, hx);
     }
 
-    /* Copy NOW — the C buffer does not outlive this call — then write on the BLE queue
-     * (CoreBluetooth peripheral ops must run on the central's queue). */
+    /* Copy NOW — the C buffer does not outlive this call — then write on the BLE queue. */
     NSMutableData *out = [NSMutableData data];
 #if TRITON_BLE_C0_WRAPPER
     unsigned char seg = 0xC0;                 /* REPORT_SEGMENT_DATA_FLAG | LAST_FLAG (spec §9.5) */
     [out appendBytes:&seg length:1];
 #endif
     [out appendBytes:payload length:(NSUInteger)plen];
-
+    CBCharacteristic *tch = target;
     dispatch_async(self.bleQueue, ^{
-        if (self.controller && self.reportChar) {
-            [self.controller writeValue:out forCharacteristic:self.reportChar
-                                   type:CBCharacteristicWriteWithResponse];
+        if (self.controller && tch) {
+            CBCharacteristicWriteType wt = (tch.properties & CBCharacteristicPropertyWrite)
+                ? CBCharacteristicWriteWithResponse : CBCharacteristicWriteWithoutResponse;
+            [self.controller writeValue:out forCharacteristic:tch type:wt];
         }
     });
 }
