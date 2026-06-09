@@ -60,11 +60,48 @@ server write-sink → C trampoline → `TritonBLEBridge handleHostWriteKind:` �
 Host side (Vibepollo / manual): `usbip attach -r <ipad-ip> -b 1-1 --once` on stream start;
 `usbip detach -a` on stop (Phase 2 wires this via `client_do_cmds`/`undo_cmds`).
 
+## Gyro / IMU — enable-gated; the liveness gate + on-device test
+
+**Proven on real hardware (genuine controller, native USB, Steam open):** the IMU is OFF by
+default — the controller streams accel/gyro only after the host writes `GYRO_MODE`. Steam's
+*desktop* config never enables it, so the IMU block (the tail of the `0x45`/`0x42` report, wire
+bytes 30–45) arrives **frozen** at a stale non-zero sample; a frozen non-zero gyro reads to Steam
+as a *constant* rotation and flies the desktop cursor. The enable command (confirmed both ways —
+`0x18` on, `0x0000` off, via `tools/triton-usbip/win/HidInputDump.cs` `ProbeGyro`):
+
+```
+feature report 0x01:  87 03 30 18 00
+= WRITE_REGISTER, len 3, reg 0x30 (GYRO_MODE), value 0x0018 (raw accel | raw gyro)
+```
+
+`triton_input_queue` gates the IMU by **liveness** (`triton_imu_is_live`): pass the IMU through
+while its u32 timestamp is advancing (gyro enabled), zero it while frozen (gyro off). Self-
+correcting, no flag to flip — when Steam enables gyro the live data flows; otherwise Steam gets
+zeros and the cursor stays calm. **Do NOT self-enable gyro** (a permanent enable re-flies the
+desktop cursor); let Steam's own enable write drive it. (`TRITON_BLE_LIVE_IMU` disables the gate
+for the bench A/B server only.)
+
+**On-device test:**
+1. *Baseline (desktop):* cursor calm, sticks/buttons live — the gate zeroing the frozen IMU.
+2. *Live gyro:* make Steam ask for it — Steam Input → Gyro = "As Mouse"/"As Joystick", **Always
+   On**, or launch a game with native gyro. Steam then sends `87 03 30 18`, which our pipe forwards
+   over BLE to `100F6C34`; the controller's IMU timestamp starts advancing and the gate passes the
+   live data through.
+3. *Capture (Console.app, filter `[Triton]`):* after enabling, do the `BLE in #N` lines show the
+   IMU tail of the `0x45` frame **changing**? Changing → live gyro end-to-end. Still frozen → the
+   enable write isn't taking → set `TRITON_BLE_C0_WRAPPER 1` (below) and retry.
+
+**Optional fast diagnostic (prove gate + BLE forward without a gyro game):** temporarily write
+`{0x87,0x03,0x30,0x18,0x00}` to `100F6C34` once on connect (after subscribing). If the IMU wakes in
+the BLE logs and, in a gyro→mouse desktop config, the cursor moves *with* the controller, the gate's
+live branch is confirmed over BLE. **Remove before shipping.**
+
 ## On-device verification / open items (cannot be checked on Windows — design spec §9.5)
 
 - **Write framing to `100F6C34`:** we strip the leading USB report-id and write the command
-  payload. If lizard-disable doesn't take, set `TRITON_BLE_C0_WRAPPER 1` in `TritonBLEBridge.m`
-  (wraps as `[0xC0][payload]`). Capture the genuine write with a BLE sniffer to confirm.
+  payload. If lizard-disable (or the enable-gyro `87 03 30 18` write — see the Gyro / IMU section)
+  doesn't take, set `TRITON_BLE_C0_WRAPPER 1` in `TritonBLEBridge.m` (wraps as `[0xC0][payload]`).
+  Capture the genuine write with a BLE sniffer to confirm.
 - **Feature-read replies:** we treat notifications on `100F6C34` as the reply
   (`triton_feature_provide`). If the controller does not NOTIFY there, switch to read-after-write.
   Then enable live reads by uncommenting `triton_set_feature_live(1)` in `TritonController.m`
