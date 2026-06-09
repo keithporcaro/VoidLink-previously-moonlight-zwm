@@ -234,8 +234,14 @@ static int kTritonHapticIndex = 1;
             haptic = self.candidateChars[kTritonHapticIndex];   /* lock to the sweep-found candidate */
             static BOOL s_logged = NO;
             if (!s_logged) { s_logged = YES;
-                NSLog(@"[Triton] LOCKED haptic = candidate %d uuid=%{public}s", kTritonHapticIndex,
-                      [haptic.UUID.UUIDString UTF8String]); }
+                /* Log UUID as integer BYTES — Console can't decode string args from iOS device logs,
+                 * but scalars survive. A 100F6CXX-1735-… char prints as 10 0f 6c XX 17 35 43 13 … */
+                const unsigned char *ub = (const unsigned char *)haptic.UUID.data.bytes;
+                NSUInteger ul = haptic.UUID.data.length;
+                NSLog(@"[Triton] LOCKED haptic candidate %d uuid(len=%lu)= %02x %02x %02x %02x %02x %02x %02x %02x",
+                      kTritonHapticIndex, (unsigned long)ul,
+                      ul>0?ub[0]:0, ul>1?ub[1]:0, ul>2?ub[2]:0, ul>3?ub[3]:0,
+                      ul>4?ub[4]:0, ul>5?ub[5]:0, ul>6?ub[6]:0, ul>7?ub[7]:0); }
         }
         if (haptic) {                                 /* LOCKED: route to the identified haptic char */
             target = haptic; payload = data + 1; plen -= 1;     /* report-id implied by the char */
