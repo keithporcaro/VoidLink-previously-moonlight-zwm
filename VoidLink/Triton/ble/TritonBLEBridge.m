@@ -24,6 +24,10 @@ static NSString * const kTritonReportUUID    = @"100F6C34-1735-4313-B402-3856713
  * OUTPUT writes SWEEP across every writable characteristic (~1s each) so we can feel which one
  * buzzes and read its UUID from the [Triton] RUMBLE SWEEP log line. */
 static NSString *kTritonHapticUUID = nil;
+/* Sweep-found haptic characteristic index (candidate 1 buzzed, 2026-06-09). -1 = sweep again.
+ * The resolved UUID is logged once as "LOCKED haptic = candidate 1 uuid=…" — promote it to
+ * kTritonHapticUUID for an order-independent lock. */
+static int kTritonHapticIndex = 1;
 
 @interface TritonBLEBridge () <CBCentralManagerDelegate, CBPeripheralDelegate>
 @property (nonatomic, strong) CBCentralManager *central;
@@ -226,6 +230,13 @@ static NSString *kTritonHapticUUID = nil;
         }
         if (plen > len) plen = len;
         CBCharacteristic *haptic = (kTritonHapticUUID ? self.allChars[kTritonHapticUUID] : nil);
+        if (!haptic && kTritonHapticIndex >= 0 && kTritonHapticIndex < (int)self.candidateChars.count) {
+            haptic = self.candidateChars[kTritonHapticIndex];   /* lock to the sweep-found candidate */
+            static BOOL s_logged = NO;
+            if (!s_logged) { s_logged = YES;
+                NSLog(@"[Triton] LOCKED haptic = candidate %d uuid=%{public}s", kTritonHapticIndex,
+                      [haptic.UUID.UUIDString UTF8String]); }
+        }
         if (haptic) {                                 /* LOCKED: route to the identified haptic char */
             target = haptic; payload = data + 1; plen -= 1;     /* report-id implied by the char */
         } else if (self.candidateChars.count > 0) {   /* SWEEP: ~1s (25 writes @40ms) per candidate */
