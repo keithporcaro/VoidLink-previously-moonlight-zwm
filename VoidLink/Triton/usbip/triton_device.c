@@ -51,7 +51,7 @@ const USB_DEVICE_DESCRIPTOR dev_dsc =
     0x0307,      /* bcdDevice = 3.07 (captured)                            */
     0x01,        /* iManufacturer -> strings[1] "Valve Software"           */
     0x02,        /* iProduct      -> strings[2] "Steam Controller"         */
-    0x03,        /* iSerialNumber -> strings[3] "FXA9960600BA2"            */
+    0x03,        /* iSerialNumber -> strings[3] (synthetic placeholder)            */
     0x01         /* bNumConfigurations                                     */
 };
 
@@ -91,8 +91,8 @@ static const unsigned char str_mfg[]  = { 0x1E, 0x03,
     'V',0,'a',0,'l',0,'v',0,'e',0,' ',0,'S',0,'o',0,'f',0,'t',0,'w',0,'a',0,'r',0,'e',0 };
 static const unsigned char str_prod[] = { 0x22, 0x03,
     'S',0,'t',0,'e',0,'a',0,'m',0,' ',0,'C',0,'o',0,'n',0,'t',0,'r',0,'o',0,'l',0,'l',0,'e',0,'r',0 };
-static const unsigned char str_ser[]  = { 0x1C, 0x03,
-    'F',0,'X',0,'A',0,'9',0,'9',0,'6',0,'0',0,'6',0,'0',0,'0',0,'B',0,'A',0,'2',0 };
+static const unsigned char str_ser[]  = { 0x1C, 0x03,   /* synthetic serial — not a real device id */
+    'T',0,'R',0,'I',0,'T',0,'O',0,'N',0,'0',0,'0',0,'0',0,'0',0,'0',0,'0',0,'1',0 };
 const unsigned char *strings[] = {
     str_lang, str_mfg, str_prod, str_ser,
     0, 0, 0, 0, 0, 0, 0, 0       /* indices 4..11 absent -> usbip.c stalls them */
@@ -134,7 +134,7 @@ static int triton_build_attributes(unsigned char *buf, unsigned char report_id)
     buf[n++] = TRITON_CMD_GET_ATTRIBUTES; /* echo 0x83 */
     int len_pos = n++;
     start = n;
-    n += triton_put_attr(buf + n, ATTRIB_UNIQUE_ID,           0x0600BA29);
+    n += triton_put_attr(buf + n, ATTRIB_UNIQUE_ID,           0x00000001);   /* synthetic — not a real device id */
     n += triton_put_attr(buf + n, ATTRIB_PRODUCT_ID,          0x00001302);
     n += triton_put_attr(buf + n, ATTRIB_CAPABILITIES,        0x00000000);
     n += triton_put_attr(buf + n, ATTRIB_FIRMWARE_BUILD_TIME, 0x65A00000);
