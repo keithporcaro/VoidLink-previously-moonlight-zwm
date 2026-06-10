@@ -574,13 +574,12 @@ usbip_run (const USB_DEVICE_DESCRIPTOR *dev_dsc)                                
 
              if(cmd.command > 2)
              {
-                printf("Unknown USBIP cmd!\n");
-                close (sockfd); g_usbip_sockfd = -1;
-                if (g_usbip_listenfd >= 0) { close (g_usbip_listenfd); g_usbip_listenfd = -1; }
-#if !defined(LINUX) && !defined(__APPLE__)
-                WSACleanup ();
-#endif
-                return;
+                /* Unknown/garbage command (often a socket that is dropping). Drop ONLY this
+                 * client and let the outer accept-loop recover. Previously this closed the
+                 * listen socket and returned from usbip_run, killing the whole :3240 server
+                 * while TritonController stayed active=YES -> a permanent brick until relaunch. */
+                printf("Unknown USBIP cmd! dropping client; listener stays up\n");
+                break;
              };
  
           } 

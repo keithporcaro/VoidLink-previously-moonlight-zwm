@@ -29,7 +29,19 @@ static void triton_write_sink_trampoline(int kind, const unsigned char *data, in
 
 - (void)startWithControllerSupport:(ControllerSupport *)cs {
     @synchronized (self) {
-        if (self.active) return;
+        if (self.active) {
+            /* Already running -> nothing to do. But if the server thread has exited (the old
+             * "Unknown USBIP cmd" teardown, or iOS suspending the app killed it), `active` is
+             * stale; tear down the husk and fall through to re-spawn instead of silently
+             * returning (which left :3240 dead with no way back short of an app relaunch). */
+            if (self.serverThread && !self.serverThread.isFinished) return;
+            NSLog(@"[Triton] server thread gone but active=YES — re-spawning :3240");
+            [self.bridge stop];
+            self.bridge = nil;
+            triton_set_write_sink(NULL);
+            g_sinkBridge = nil;
+            self.active = NO;
+        }
         self.controllerSupport = cs;
 
         /* 1) Wire Steam -> controller writes (SET_REPORT / interrupt-OUT -> BLE). */
