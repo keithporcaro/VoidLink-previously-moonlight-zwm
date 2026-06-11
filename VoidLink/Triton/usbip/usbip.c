@@ -432,6 +432,16 @@ usbip_run (const USB_DEVICE_DESCRIPTOR *dev_dsc)                                
         };
         g_usbip_sockfd = sockfd;
         {
+          /* Disable Nagle on the data socket. Each interrupt-IN report is sent as a small
+           * header + payload pair (send_usb_req), which with Nagle on stalls behind the host's
+           * delayed ACK. TCP_NODELAY ships every report immediately -> lower, steadier input
+           * latency. Affects only WHEN bytes go out, never WHAT, so attach / descriptors /
+           * feature responder / haptics are byte-identical. */
+          int nodelay = 1;
+          if (setsockopt(sockfd, IPPROTO_TCP, TCP_NODELAY, (const char*)&nodelay, sizeof(nodelay)) < 0)
+            perror("setsockopt(TCP_NODELAY) failed");
+        }
+        {
           char addrstr[INET6_ADDRSTRLEN] = "?";
           inet_ntop(AF_INET6, &cli.sin6_addr, addrstr, sizeof(addrstr));
           printf("Connection address:%s\n", addrstr);

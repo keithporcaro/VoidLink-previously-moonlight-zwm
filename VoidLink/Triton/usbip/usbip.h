@@ -28,6 +28,7 @@
 #include<sys/socket.h>
 #include<sys/un.h>
 #include<netinet/in.h>
+#include<netinet/tcp.h>   /* TCP_NODELAY */
 #include<arpa/inet.h>
 #define        min(a,b)        ((a) < (b) ? (a) : (b))
 #else
